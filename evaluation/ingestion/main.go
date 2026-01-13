@@ -8,68 +8,63 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dgraph-io/dgo/v2"
 	"github.com/dgraph-io/dgo/v2/protos/api"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	_ "github.com/lib/pq" // Postgres driver
+	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 // ======================================================================================
-// SECTION I: INFRASTRUCTURE & POLYGLOT PERSISTENCE
-//
-// This section establishes the "Polyglot Persistence" foundation using externalized
-// configuration. This decoupling allows for environmental flexibility while maintaining
-// the logical separation between "Topology" (Knowledge Graph) and "State" (Time-Series DB).
+// CONFIGURATION & CONSTANTS
 // ======================================================================================
 
 const (
-	TopicPrefix = "dt/sensor/"
-	OutputCSV   = "output/ingestion_evaluation_results.csv"
-	TotalRuns   = 2
+	TopicPrefix       = "dt/sensor/"
+	OutputCSV         = "output/ingestion_evaluation_results.csv"
+	TotalRuns         = 10
+	TestDurationSec   = 10 // Duración de cada test
+	WarmupDurationSec = 5  // Duración del calentamiento
+	QoSLevel          = 1  // At least once
 )
 
-// Global Infrastructure Handles & Configuration
+// Global Infrastructure
 var (
-	cfg           config.Env     // Global configuration struct loaded from environment
-	pgDB          *sql.DB        // Handle for the Data Plane (ISU)
-	stmtTimescale *sql.Stmt      // Prepared statement for high-frequency ingestion
-	dgClient      *dgo.Dgraph    // Handle for the Semantic Plane (KG)
-	sensorUIDMap  map[int]string // Logical articulation mapping (Data Anchor resolution)
+	cfg           config.Env
+	pgDB          *sql.DB
+	stmtTimescale *sql.Stmt
+	dgClient      *dgo.Dgraph
+	sensorUIDMap  map[int]string
 )
 
-// Experimental Parameters
+// Structs
 type Scenario struct {
-	ID              int
-	Name            string
+	StepID          int
 	NumSensors      int
-	FrequencyHz     float64
-	GraphComplexity int // Represents the "Relational Density" of the topology
-	DurationSec     int
+	FrequencyHz     float64 // Frecuencia específica por escenario
+	GraphComplexity int
 }
 
 type Result struct {
-	ScenarioID       int
+	StepID           int
+	NumSensors       int
 	Architecture     string
 	RunID            int
+	FrequencyHz      float64
 	AvgLatencyMs     float64
 	MessagesSent     int64
 	MessagesLost     int64
+	DbErrors         int64 // Nuevo: Errores de persistencia (Fairness)
 	ThroughputMsgSec float64
 }
-
-// ======================================================================================
-// SECTION II: THE SEMANTIC PLANE (TOPOLOGY)
-//
-// This layer represents the DT's logical structure. Initialization is driven by
-// the configuration provided by the environment variables (DGRAPH_URI).
-// ======================================================================================
 
 type SensorNode struct {
 	Uid   string   `json:"uid,omitempty"`
@@ -78,120 +73,304 @@ type SensorNode struct {
 	Value string   `json:"value,omitempty"`
 }
 
-func initDgraph() {
-	// Connection target derived from external configuration
-	target := cfg.DgraphURI
-	conn, err := grpc.Dial(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		log.Fatalf("Failed to initialize Semantic Plane connection at %s: %v", target, err)
-	}
-	dgClient = dgo.NewDgraphClient(api.NewDgraphClient(conn))
-}
+// ======================================================================================
+// SECTION I: EXPERIMENT CONTROL
+// ======================================================================================
 
-// prepareGraph initializes the Semantic Plane before experimental execution.
-// It validates the premise that "Topology comprises structural relationships...
-// and remains stable barring physical modifications."
-func prepareGraph(totalNodes int, activeSensors int) {
-	ctx := context.Background()
+func main() {
+	log.SetFlags(0)
+	rand.Seed(time.Now().UnixNano())
+	cfg = config.LoadEnv()
 
-	pgDB.Exec("TRUNCATE TABLE ingestion_test")
+	initInfrastructure()
+	defer pgDB.Close()
 
-	// 1. Reset State to ensure experimental consistency
-	dgClient.Alter(ctx, &api.Operation{DropAll: true})
-	op := &api.Operation{Schema: `
-        name: string @index(hash) . 
-        value: string .
-        type Thing {
-            name
-            value
-        }
-    `}
-	if err := dgClient.Alter(ctx, op); err != nil {
-		log.Fatal(err)
+	writer := initCSVWriter()
+	defer writer.Flush()
+
+	// Definición exacta de tus escenarios
+	// Frecuencia: 10s = 0.1Hz, 5s = 0.2Hz, 2s = 0.5Hz
+	scenarios := []Scenario{
+		{StepID: 1, NumSensors: 100, FrequencyHz: 0.1, GraphComplexity: 200},
+		{StepID: 2, NumSensors: 500, FrequencyHz: 0.1, GraphComplexity: 500},
+		{StepID: 3, NumSensors: 1000, FrequencyHz: 0.1, GraphComplexity: 1000},
+		{StepID: 4, NumSensors: 2000, FrequencyHz: 0.2, GraphComplexity: 2000},
+		{StepID: 5, NumSensors: 5000, FrequencyHz: 0.2, GraphComplexity: 5000},
 	}
 
-	// 2. Topology Generation (Simulating Semantic Overhead)
-	sensorUIDMap = make(map[int]string)
-	batchSize := 1000
-	var allNodes []SensorNode
+	architectures := []string{"Federated", "Centralized"}
 
-	for i := range totalNodes {
-		node := SensorNode{
-			Uid:   fmt.Sprintf("_:node%d", i),
-			DType: []string{"Thing"},
-			Name:  fmt.Sprintf("Thing_%d", i),
-			Value: "init", // Initial static state
-		}
-		allNodes = append(allNodes, node)
-	}
+	fmt.Println("Starting INGESTION EVALUATION...")
+	fmt.Printf("QoS: %d | Duration: %d sec\n", QoSLevel, TestDurationSec)
 
-	// 3. Persist Topology to the KG
-	for i := 0; i < len(allNodes); i += batchSize {
-		end := i + batchSize
-		if end > len(allNodes) {
-			end = len(allNodes)
-		}
+	// --- WARM UP PHASE ---
+	fmt.Println("\n>>> SYSTEM WARM-UP (5 seconds) <<<")
+	warmupSc := Scenario{StepID: 0, NumSensors: 500, FrequencyHz: 1.0, GraphComplexity: 1000}
+	prepareEnvironment(warmupSc.GraphComplexity, warmupSc.NumSensors)
+	executeTestRun(warmupSc, "Centralized", 0, true)
+	fmt.Println(">>> Warm-up Complete. Cooling down... <<<")
+	time.Sleep(3 * time.Second)
+	// ---------------------
 
-		batch := allNodes[i:end]
-		jsonBytes, _ := json.Marshal(batch)
-		mu := &api.Mutation{SetJson: jsonBytes, CommitNow: true}
+	for _, sc := range scenarios {
+		fmt.Printf("\n>>> STEP %d: %d Sensors @ %.2f Hz (%d Nodes) <<<\n",
+			sc.StepID, sc.NumSensors, sc.FrequencyHz, sc.GraphComplexity)
 
-		resp, err := dgClient.NewTxn().Mutate(ctx, mu)
-		if err != nil {
-			log.Fatal("Failed to populate Semantic Plane:", err)
-		}
+		// Preparar topología antes de las ejecuciones de este escenario
+		prepareEnvironment(sc.GraphComplexity, sc.NumSensors)
 
-		// 4. Establish Data Anchors
-		for j := i; j < end; j++ {
-			if j < activeSensors {
-				blankNodeID := fmt.Sprintf("node%d", j)
-				sensorUIDMap[j] = resp.Uids[blankNodeID]
+		for _, arch := range architectures {
+			fmt.Printf("--- Arch: %s ---\n", arch)
+			for run := 1; run <= TotalRuns; run++ {
+
+				res := executeTestRun(sc, arch, run, false)
+
+				// Escritura en CSV con nuevas métricas
+				writer.Write([]string{
+					strconv.Itoa(res.StepID),
+					strconv.Itoa(res.NumSensors),
+					fmt.Sprintf("%.2f", res.FrequencyHz),
+					arch,
+					strconv.Itoa(run),
+					strconv.Itoa(sc.GraphComplexity),
+					fmt.Sprintf("%.4f", res.AvgLatencyMs),
+					strconv.FormatInt(res.MessagesLost, 10),
+					strconv.FormatInt(res.DbErrors, 10), // Nueva columna
+					fmt.Sprintf("%.2f", res.ThroughputMsgSec),
+				})
+				writer.Flush()
+
+				// Mensaje en consola en inglés
+				fmt.Printf("   > Run %d: Sent(Confirmed)=%d | Lost(MQTT)=%d | DB_Errors=%d | Latency=%.2fms\n",
+					run, res.MessagesSent, res.MessagesLost, res.DbErrors, res.AvgLatencyMs)
+
+				time.Sleep(2 * time.Second)
 			}
 		}
 	}
+	fmt.Println("\nIngestion Evaluation Complete.")
 }
 
-// writeToDgraph implements the CENTRALIZED ARCHITECTURE (The Baseline/Anti-Pattern).
-func writeToDgraph(sensorID int, val string) {
+// ======================================================================================
+// SECTION II: ORCHESTRATION & MEASUREMENT
+// ======================================================================================
+
+func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
+	var totalLatency int64 = 0
+	var msgReceivedCount int64 = 0
+	var msgSentCount int64 = 0
+	var dbErrorCount int64 = 0 // Contador atómico para errores de BD
+
+	var muMetrics sync.Mutex
+
+	duration := TestDurationSec
+	if isWarmup {
+		duration = WarmupDurationSec
+	}
+
+	done := make(chan bool)
+
+	// --- A. SERVER SIDE ---
+	serverOpts := createMQTTOpts(fmt.Sprintf("srv_%s_%d_%d", arch, sc.NumSensors, runID))
+
+	serverOpts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
+		// Recuperar Timestamp
+		payloadStr := string(msg.Payload())
+		sentTimeNano, _ := strconv.ParseInt(payloadStr, 10, 64)
+		sentTime := time.Unix(0, sentTimeNano)
+
+		// Recuperar ID del sensor del topic
+		topic := msg.Topic()
+		sensorIDStr := topic[len(TopicPrefix):]
+		sensorID, _ := strconv.Atoi(sensorIDStr)
+
+		// ESCRITURA EN BD (Con manejo de errores explícito)
+		var err error
+		if arch == "Centralized" {
+			err = writeToDgraph(sensorID, payloadStr)
+		} else {
+			err = writeToTimescale(payloadStr)
+		}
+
+		// Si hay error en BD, lo registramos y NO contamos latencia para no ensuciar la media
+		if err != nil {
+			atomic.AddInt64(&dbErrorCount, 1)
+			return
+		}
+
+		latencyMicro := time.Since(sentTime).Microseconds()
+
+		muMetrics.Lock()
+		totalLatency += latencyMicro
+		msgReceivedCount++
+		muMetrics.Unlock()
+	})
+
+	srvClient := mqtt.NewClient(serverOpts)
+	if token := srvClient.Connect(); token.Wait() && token.Error() != nil {
+		log.Printf("Server Connect Error: %v", token.Error())
+		return Result{}
+	}
+	srvClient.Subscribe(TopicPrefix+"#", QoSLevel, nil)
+	time.Sleep(1 * time.Second)
+
+	// --- B. CLIENT SIDE ---
+	var wgSensors sync.WaitGroup
+
+	// Cálculo del ticker según la frecuencia del escenario
+	// Ejemplo: 0.1 Hz -> 1000 / 0.1 = 10,000 ms = 10s
+	tickerInterval := time.Duration(1000.0/sc.FrequencyHz) * time.Millisecond
+
+	for i := 0; i < sc.NumSensors; i++ {
+		wgSensors.Add(1)
+		go func(id int) {
+			defer wgSensors.Done()
+
+			cOpts := createMQTTOpts(fmt.Sprintf("s_%d_%d_%d_%d", sc.StepID, sc.NumSensors, runID, id))
+			c := mqtt.NewClient(cOpts)
+			if token := c.Connect(); token.Wait() && token.Error() != nil {
+				return
+			}
+			defer c.Disconnect(0)
+
+			// Jitter inicial
+			time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
+
+			ticker := time.NewTicker(tickerInterval)
+			timeout := time.After(time.Duration(duration) * time.Second)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-timeout:
+					return
+				case <-ticker.C:
+					payload := fmt.Sprintf("%d", time.Now().UnixNano())
+					t := c.Publish(TopicPrefix+strconv.Itoa(id), QoSLevel, false, payload)
+					t.Wait()
+
+					if t.Error() == nil {
+						muMetrics.Lock()
+						msgSentCount++
+						muMetrics.Unlock()
+					}
+				}
+			}
+		}(i)
+	}
+
+	wgSensors.Wait()
+	time.Sleep(2 * time.Second) // Wait for inflight messages
+	srvClient.Disconnect(0)
+	close(done)
+
+	// --- C. STATS ---
+	avgLat := 0.0
+	if msgReceivedCount > 0 {
+		avgLat = float64(totalLatency) / float64(msgReceivedCount) / 1000.0
+	}
+
+	throughput := float64(msgReceivedCount) / float64(duration)
+
+	return Result{
+		StepID:           sc.StepID,
+		NumSensors:       sc.NumSensors,
+		FrequencyHz:      sc.FrequencyHz,
+		Architecture:     arch,
+		RunID:            runID,
+		AvgLatencyMs:     avgLat,
+		MessagesSent:     msgSentCount,
+		MessagesLost:     msgSentCount - msgReceivedCount - atomic.LoadInt64(&dbErrorCount), // Lost network
+		DbErrors:         atomic.LoadInt64(&dbErrorCount),                                   // Lost DB
+		ThroughputMsgSec: throughput,
+	}
+}
+
+// ======================================================================================
+// SECTION III: PERSISTENCE LOGIC (Updated for Error Tracking)
+// ======================================================================================
+
+func writeToDgraph(sensorID int, val string) error {
 	uid, exists := sensorUIDMap[sensorID]
 	if !exists {
-		return
+		return fmt.Errorf("uid not found")
 	}
 
 	d := SensorNode{Uid: uid, Value: val}
 	pb, _ := json.Marshal(d)
 
 	mu := &api.Mutation{SetJson: pb, CommitNow: true}
+	// Ahora devolvemos el error en lugar de ignorarlo
 	_, err := dgClient.NewTxn().Mutate(context.Background(), mu)
-	if err != nil {
-		log.Println("Semantic Plane Write Error:", err)
+	return err
+}
+
+func writeToTimescale(val string) error {
+	_, err := stmtTimescale.Exec(val)
+	return err
+}
+
+func prepareEnvironment(totalNodes int, activeSensors int) {
+	ctx := context.Background()
+	dgClient.Alter(ctx, &api.Operation{DropAll: true})
+	pgDB.Exec("TRUNCATE TABLE ingestion_test")
+
+	op := &api.Operation{Schema: `
+		name: string @index(hash) .
+		value: string .
+		type Thing {
+			name
+			value
+		}
+	`}
+	dgClient.Alter(ctx, op)
+
+	sensorUIDMap = make(map[int]string)
+	var allNodes []SensorNode
+
+	for i := 0; i < totalNodes; i++ {
+		allNodes = append(allNodes, SensorNode{
+			Uid:   fmt.Sprintf("_:node%d", i),
+			DType: []string{"Thing"},
+			Name:  fmt.Sprintf("Thing_%d", i),
+			Value: "init",
+		})
+	}
+
+	batchSize := 2000
+	for i := 0; i < len(allNodes); i += batchSize {
+		end := i + batchSize
+		if end > len(allNodes) {
+			end = len(allNodes)
+		}
+		batch := allNodes[i:end]
+		jsonBytes, _ := json.Marshal(batch)
+		mu := &api.Mutation{SetJson: jsonBytes, CommitNow: true}
+		resp, err := dgClient.NewTxn().Mutate(ctx, mu)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for j := i; j < end; j++ {
+			if j < activeSensors {
+				sensorUIDMap[j] = resp.Uids[fmt.Sprintf("node%d", j)]
+			}
+		}
 	}
 }
 
-// ======================================================================================
-// SECTION III: THE DATA PLANE (STATE / ISUs)
-//
-// This layer connects to the Independent Storage Units (ISUs) using credentials
-// and endpoints defined in the configuration module.
-// ======================================================================================
+func initInfrastructure() {
+	conn, _ := grpc.Dial(cfg.DgraphURI, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	dgClient = dgo.NewDgraphClient(api.NewDgraphClient(conn))
 
-func initTimescale() {
 	var err error
-	// Connection string is constructed dynamically via the config method
-	connStr := cfg.PostgresConn()
-	pgDB, err = sql.Open("postgres", connStr)
+	pgDB, err = sql.Open("postgres", cfg.PostgresConn())
 	if err != nil {
-		log.Fatalf("Failed to connect to ISU (Postgres) using config: %v", err)
+		log.Fatal(err)
 	}
 
-	// Schema Definition for the Data Plane
 	pgDB.Exec("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")
-	pgDB.Exec("DROP TABLE IF EXISTS ingestion_test;")
-	pgDB.Exec(`CREATE TABLE ingestion_test (
-        time TIMESTAMPTZ NOT NULL,
-        payload TEXT
-    );`)
-	pgDB.Exec("SELECT create_hypertable('ingestion_test', 'time');")
+	pgDB.Exec("CREATE TABLE IF NOT EXISTS ingestion_test (time TIMESTAMPTZ NOT NULL, payload TEXT);")
+	pgDB.Exec("SELECT create_hypertable('ingestion_test', 'time', if_not_exists => TRUE);")
 
 	stmtTimescale, err = pgDB.Prepare("INSERT INTO ingestion_test (time, payload) VALUES (NOW(), $1)")
 	if err != nil {
@@ -199,178 +378,25 @@ func initTimescale() {
 	}
 }
 
-// writeToTimescale implements the PROPOSED FEDERATED ARCHITECTURE.
-func writeToTimescale(val string) {
-	_, err := stmtTimescale.Exec(val)
-	if err != nil {
-		log.Println("Data Plane (ISU) Write Error:", err)
-	}
+func createMQTTOpts(clientID string) *mqtt.ClientOptions {
+	brokerURI := fmt.Sprintf("tcp://%s:%s", cfg.MQTT.Broker, cfg.MQTT.Port)
+	opts := mqtt.NewClientOptions().AddBroker(brokerURI).SetClientID(clientID)
+	opts.SetCleanSession(true)
+	opts.SetUsername(cfg.MQTT.User)
+	opts.SetPassword(cfg.MQTT.Pass)
+	opts.SetKeepAlive(60 * time.Second)
+	opts.SetWriteTimeout(5 * time.Second)
+	opts.SetConnectTimeout(5 * time.Second)
+	return opts
 }
 
-// ======================================================================================
-// SECTION IV: EXPERIMENTAL ORCHESTRATION & EVALUATION
-//
-// Executes the empirical comparison. MQTT clients are instantiated using
-// the broker credentials loaded from the environment variables.
-// ======================================================================================
-
-func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-
-	// 0. Load Configuration
-	cfg = config.LoadEnv()
-
-	// 1. Initialize Polyglot Infrastructure
-	initTimescale()
-	initDgraph()
-
-	// 2. Prepare Data Logging
+func initCSVWriter() *csv.Writer {
 	file, _ := os.Create(OutputCSV)
-	defer file.Close()
 	writer := csv.NewWriter(file)
 	writer.Write([]string{
-		"Scenario_ID", "Architecture", "Run_ID", "Num_Sensors",
-		"Frequency_Hz", "Graph_Complexity", "Avg_Latency_ms",
-		"Packet_Loss_Count", "Throughput_msg_sec",
+		"Step_ID", "Num_Sensors", "Freq_Hz", "Architecture", "Run_ID", "Graph_Complexity",
+		"Avg_Latency_ms", "Packet_Loss_Network", "DB_Errors", "Throughput_msg_sec",
 	})
 	writer.Flush()
-
-	// 3. Define Scenarios
-	scenarios := []Scenario{
-		{ID: 1, Name: "Baseline", NumSensors: 50, FrequencyHz: 1.0, GraphComplexity: 1000, DurationSec: 10},
-		{ID: 2, Name: "High Frequency", NumSensors: 50, FrequencyHz: 20.0, GraphComplexity: 1000, DurationSec: 10},
-		{ID: 4, Name: "Complex Graph A", NumSensors: 100, FrequencyHz: 5.0, GraphComplexity: 10000, DurationSec: 10},
-		{ID: 5, Name: "Complex Graph B", NumSensors: 100, FrequencyHz: 5.0, GraphComplexity: 50000, DurationSec: 10},
-	}
-
-	architectures := []string{"Federated", "Centralized"}
-
-	fmt.Println("Starting INGESTION EVALUATION (Federated vs Centralized)...")
-
-	for _, sc := range scenarios {
-		fmt.Printf("\n>>> Initializing Topology for Scenario %d (%d Nodes) <<<\n", sc.ID, sc.GraphComplexity)
-		prepareGraph(sc.GraphComplexity, sc.NumSensors)
-
-		for _, arch := range architectures {
-			fmt.Printf("--- Evaluating Architecture: %s ---\n", arch)
-			for run := 1; run <= TotalRuns; run++ {
-				res := executeTestRun(sc, arch, run)
-				writer.Write([]string{
-					strconv.Itoa(sc.ID), arch, strconv.Itoa(run),
-					strconv.Itoa(sc.NumSensors), fmt.Sprintf("%.1f", sc.FrequencyHz),
-					strconv.Itoa(sc.GraphComplexity), fmt.Sprintf("%.4f", res.AvgLatencyMs),
-					strconv.FormatInt(res.MessagesLost, 10), fmt.Sprintf("%.2f", res.ThroughputMsgSec),
-				})
-				writer.Flush()
-				time.Sleep(2 * time.Second)
-			}
-		}
-	}
-	fmt.Println("\nEvaluation Complete. Data saved to", OutputCSV)
-}
-
-// executeTestRun orchestrates the message flow using configured MQTT endpoints.
-func executeTestRun(sc Scenario, arch string, runID int) Result {
-	var totalLatency int64 = 0
-	var msgReceivedCount int64 = 0
-	var msgSentCount int64 = 0
-	var muMetrics sync.Mutex
-	done := make(chan bool)
-
-	// Helper to create configured MQTT Client Options
-	createMQTTOpts := func(clientID string) *mqtt.ClientOptions {
-		brokerURI := fmt.Sprintf("tcp://%s:%s", cfg.MQTT.Broker, cfg.MQTT.Port)
-		opts := mqtt.NewClientOptions().AddBroker(brokerURI).SetClientID(clientID)
-		opts.SetCleanSession(true)
-		// Inject Credentials from Config
-		opts.SetUsername(cfg.MQTT.User)
-		opts.SetPassword(cfg.MQTT.Pass)
-		return opts
-	}
-
-	// --- SERVER SIDE (Ingestion Component) ---
-	opts := createMQTTOpts(fmt.Sprintf("srv_%s_%d_%d", arch, sc.ID, runID))
-
-	// Ingestion Handler
-	opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
-		topic := msg.Topic()
-		sensorIDStr := topic[len(TopicPrefix):]
-		sensorID, _ := strconv.Atoi(sensorIDStr)
-
-		sentTimeNano, _ := strconv.ParseInt(string(msg.Payload()), 10, 64)
-		sentTime := time.Unix(0, sentTimeNano)
-
-		// === ARCHITECTURAL DECISION POINT ===
-		if arch == "Centralized" {
-			writeToDgraph(sensorID, string(msg.Payload()))
-		} else {
-			writeToTimescale(string(msg.Payload()))
-		}
-
-		latencyMicro := time.Since(sentTime).Microseconds()
-		muMetrics.Lock()
-		totalLatency += latencyMicro
-		msgReceivedCount++
-		muMetrics.Unlock()
-	})
-
-	serverClient := mqtt.NewClient(opts)
-	if token := serverClient.Connect(); token.Wait() && token.Error() != nil {
-		log.Printf("Server Connection Error: %v", token.Error())
-		return Result{}
-	}
-	serverClient.Subscribe(TopicPrefix+"#", 0, nil)
-
-	// --- CLIENT SIDE (Sensors / Load Generators) ---
-	var wgSensors sync.WaitGroup
-	testDuration := time.Duration(sc.DurationSec) * time.Second
-
-	for i := 0; i < sc.NumSensors; i++ {
-		wgSensors.Add(1)
-		go func(id int) {
-			defer wgSensors.Done()
-			// Use the helper to ensure clients also use correct credentials
-			cOpts := createMQTTOpts(fmt.Sprintf("s_%d_%d_%d", sc.ID, runID, id))
-			c := mqtt.NewClient(cOpts)
-			if token := c.Connect(); token.Wait() && token.Error() != nil {
-				return
-			}
-			defer c.Disconnect(0)
-
-			ticker := time.NewTicker(time.Duration(1000.0/sc.FrequencyHz) * time.Millisecond)
-			defer ticker.Stop()
-			endTime := time.Now().Add(testDuration)
-
-			for range ticker.C {
-				if time.Now().After(endTime) {
-					return
-				}
-
-				payload := fmt.Sprintf("%d", time.Now().UnixNano())
-				token := c.Publish(TopicPrefix+strconv.Itoa(id), 0, false, payload)
-				token.Wait()
-
-				muMetrics.Lock()
-				msgSentCount++
-				muMetrics.Unlock()
-			}
-		}(i)
-	}
-
-	wgSensors.Wait()
-	time.Sleep(1 * time.Second)
-	serverClient.Disconnect(0)
-	close(done)
-
-	avgLat := 0.0
-	if msgReceivedCount > 0 {
-		avgLat = float64(totalLatency) / float64(msgReceivedCount) / 1000.0
-	}
-
-	return Result{
-		ScenarioID: sc.ID, Architecture: arch, RunID: runID,
-		AvgLatencyMs: avgLat, MessagesSent: msgSentCount,
-		MessagesLost:     msgSentCount - msgReceivedCount,
-		ThroughputMsgSec: float64(msgReceivedCount) / float64(sc.DurationSec),
-	}
+	return writer
 }

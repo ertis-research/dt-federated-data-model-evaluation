@@ -1,63 +1,145 @@
 import pandas as pd
-import seaborn as sns
 import matplotlib.pyplot as plt
+import numpy as np
 
-# 1. Load Data
+# ============================================================
+# Load evaluation data
+# ============================================================
 df = pd.read_csv("../evaluation/output/ingestion_evaluation_results.csv")
 
-# 2. Setup Plot Style for Academic Paper
-sns.set_theme(style="whitegrid")
-plt.rcParams.update({'font.family': 'serif', 'font.size': 12})
-
-# Create a figure with 2 subplots (Latency and Packet Loss)
-fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-
-# --- PLOT A: Latency vs Scenario ---
-# We group by Scenario/Arch to verify variability, but Seaborn handles this automatically with error bars
-sns.barplot(
-    data=df, 
-    x="Scenario_ID", 
-    y="Avg_Latency_ms", 
-    hue="Architecture",
-    ax=axes[0],
-    palette="viridis",
-    capsize=.1,
-    errorbar="sd" # Standard Deviation
+# ============================================================
+# Compute mean metrics across runs for each scenario
+# ============================================================
+df_mean = (
+    df.groupby(
+        ["Step_ID", "Num_Sensors", "Freq_Hz", "Architecture"],
+        as_index=False
+    )
+    .mean(numeric_only=True)
 )
 
-axes[0].set_title("End-to-End Latency Comparison")
-axes[0].set_ylabel("Average Latency (ms)")
-axes[0].set_xlabel("Test Scenario (Increasing Complexity)")
-axes[0].legend(title="Architecture")
-
-# --- PLOT B: Throughput/Scalability ---
-sns.lineplot(
-    data=df, 
-    x="Scenario_ID", 
-    y="Throughput_msg_sec", 
-    hue="Architecture",
-    ax=axes[1],
-    palette="viridis",
-    marker="o",
-    linewidth=2.5
+# ============================================================
+# Create human-readable scenario labels: <devices>@<frequency> Hz
+# ============================================================
+df_mean["Scenario_Label"] = (
+    df_mean["Num_Sensors"].astype(str)
+    + "@"
+    + df_mean["Freq_Hz"].astype(str)
+    + " Hz"
 )
 
-axes[1].set_title("System Throughput (Scalability)")
-axes[1].set_ylabel("Processed Messages / Second")
-axes[1].set_xlabel("Test Scenario")
-axes[1].grid(True, which="both", ls="--", alpha=0.5)
-
-# Add scenario descriptions as a footnote
-scenarios_desc = (
-    "Scenarios:\n"
-    "1: Baseline (50 sensors, 1Hz)\n"
-    "2: High Freq (50 sensors, 10Hz)\n"
-    "3: High Conc (200 sensors, 1Hz)\n"
-    "4: Complex Graph A (High Node Count)\n"
-    "5: Complex Graph B (Very High Node Count)"
+# Ensure consistent ordering of the six scenarios
+scenario_order = (
+    df_mean[["Step_ID", "Scenario_Label"]]
+    .drop_duplicates()
+    .sort_values("Step_ID")
 )
-plt.figtext(0.5, -0.05, scenarios_desc, ha="center", fontsize=10, bbox={"facecolor":"orange", "alpha":0.1, "pad":5})
+
+labels = scenario_order["Scenario_Label"].tolist()
+x = np.arange(len(labels))
+width = 0.35
+
+# Split architectures
+fed = df_mean[df_mean["Architecture"] == "Federated"]
+cen = df_mean[df_mean["Architecture"] == "Centralized"]
+
+# ============================================================
+# IEEE-compliant plotting style
+# ============================================================
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.size": 10,
+    "axes.grid": True,
+    "grid.linestyle": "--",
+    "grid.alpha": 0.6,
+})
+
+# ============================================================
+# FIGURE 1: Average Latency (Bar Chart)
+# ============================================================
+plt.figure(figsize=(3.6, 3.2))
+
+plt.bar(
+    x - width / 2,
+    fed["Avg_Latency_ms"],
+    width,
+    label="Federated",
+)
+plt.bar(
+    x + width / 2,
+    cen["Avg_Latency_ms"],
+    width,
+    label="Centralized",
+)
+
+plt.xlabel("Scenario (Devices @ Frequency)")
+plt.ylabel("Average Latency (ms)")
+plt.title("Average Latency per Scenario")
+plt.xticks(x, labels, rotation=30, ha="right")
+plt.legend()
 
 plt.tight_layout()
-plt.savefig("output/ingestion_plot.png", dpi=300, bbox_inches='tight')
-print("Plot generated: ingestion_plot.png")
+plt.savefig(
+    "output/ingestion_average_latency.pdf",
+    bbox_inches="tight"
+)
+
+# ============================================================
+# FIGURE 2: Throughput (Bar Chart)
+# ============================================================
+plt.figure(figsize=(3.6, 3.2))
+
+plt.bar(
+    x - width / 2,
+    fed["Throughput_msg_sec"],
+    width,
+    label="Federated",
+)
+plt.bar(
+    x + width / 2,
+    cen["Throughput_msg_sec"],
+    width,
+    label="Centralized",
+)
+
+plt.xlabel("Scenario (Devices @ Frequency)")
+plt.ylabel("Throughput (messages/s)")
+plt.title("Throughput per Scenario")
+plt.xticks(x, labels, rotation=30, ha="right")
+plt.legend()
+
+plt.tight_layout()
+plt.savefig(
+    "output/ingestion_throughput.pdf",
+    bbox_inches="tight"
+)
+
+# ============================================================
+# FIGURE 3: Packet Loss (Bar Chart)
+# ============================================================
+plt.figure(figsize=(3.6, 3.2))
+
+plt.bar(
+    x - width / 2,
+    fed["Packet_Loss_Network"],
+    width,
+    label="Federated",
+)
+plt.bar(
+    x + width / 2,
+    cen["Packet_Loss_Network"],
+    width,
+    label="Centralized",
+)
+
+plt.xlabel("Scenario (Devices @ Frequency)")
+plt.ylabel("Packet Loss (messages)")
+plt.title("Packet Loss per Scenario")
+plt.xticks(x, labels, rotation=30, ha="right")
+plt.legend()
+
+plt.tight_layout()
+plt.savefig(
+    "output/ingestion_packet_loss.pdf",
+    bbox_inches="tight"
+)
