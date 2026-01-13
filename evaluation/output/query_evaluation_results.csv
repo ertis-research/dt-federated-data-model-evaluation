@@ -1,0 +1,11 @@
+Num_Sensors,Architecture,Avg_Read_Time_ms,Runs_Count,Consistent
+100,Centralized,8.8024,10,true
+100,Federated,14.6203,10,true
+500,Centralized,18.4597,10,true
+500,Federated,22.7230,10,true
+1000,Centralized,26.1694,10,true
+1000,Federated,40.5238,10,true
+2000,Centralized,38.7710,10,true
+2000,Federated,128.4172,10,true
+5000,Centralized,65.5565,10,true
+5000,Federated,127.0995,10,true

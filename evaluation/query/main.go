@@ -29,7 +29,7 @@ import (
 const (
 	OutputCSV      = "output/query_evaluation_results.csv"
 	RunsPerTest    = 10
-	BatchSize      = 1000                   // Batch size for parallel ISU retrieval
+	BatchSize      = 500                    // Batch size for parallel ISU retrieval
 	SimulatedDelay = 100 * time.Millisecond // Throttle to prevent CPU saturation
 )
 
@@ -39,6 +39,13 @@ var (
 	pgDB     *sql.DB     // Data Plane (ISU)
 	dgClient *dgo.Dgraph // Semantic Plane (Topology)
 )
+
+type QueryMetrics struct {
+	TotalLatency float64 // ms
+	IoWaitTime   float64 // ms (Tiempo esperando a Dgraph/Postgres)
+	CpuTime      float64 // ms (Tiempo haciendo Hydration/Parsing)
+	SuccessRate  float64 // % (Cuántos nodos llegaron bien vs esperados)
+}
 
 // Domain Entity
 type Thing struct {
@@ -64,7 +71,7 @@ func main() {
 	defer writer.Flush()
 
 	// Scalability Scenarios
-	sensorCounts := []int{100, 1000, 5000, 10000, 25000, 50000}
+	sensorCounts := []int{100, 500, 1000, 2000, 5000}
 	architectures := []string{"Centralized", "Federated"}
 
 	fmt.Printf("Starting QUERY EVALUATION (%d runs average)...\n", RunsPerTest)
@@ -106,12 +113,14 @@ func measurePerformance(arch string, expectedValues map[int]string) (float64, bo
 		start := time.Now()
 
 		// === ARCHITECTURAL ENTRY POINT ===
-		retrievedValues := fetchDigitalTwinState(arch)
+		// CAMBIO: Ahora esto devuelve []Thing, no un mapa
+		hydratedGraph := fetchDigitalTwinState(arch)
 
 		totalDuration += time.Since(start).Seconds() * 1000
 		fmt.Printf(".")
 
-		if !verifyData(expectedValues, retrievedValues) {
+		// CAMBIO: Usamos la nueva función de verificación para grafos
+		if !verifyGraphData(expectedValues, hydratedGraph) {
 			consistent = false
 			log.Printf(" ! Consistency Violation in Run %d", r+1)
 		}
@@ -121,13 +130,28 @@ func measurePerformance(arch string, expectedValues map[int]string) (float64, bo
 	return totalDuration / float64(RunsPerTest), consistent
 }
 
+// Nueva función de verificación que acepta el Grafo
+func verifyGraphData(expected map[int]string, graph []Thing) bool {
+	if len(expected) != len(graph) {
+		return false
+	}
+	// Recorremos el grafo resultante para ver si coincide con lo esperado
+	for _, node := range graph {
+		expVal, ok := expected[node.ExternalID]
+		if !ok || node.Value != expVal {
+			return false
+		}
+	}
+	return true
+}
+
 // ======================================================================================
 // SECTION II: FEDERATED ORCHESTRATION ENGINE
 // This section implements the "Lazy Evaluation" and "Graph Enrichment" strategies.
 // ======================================================================================
 
 // fetchDigitalTwinState orchestrates the reconstruction of the global DT state.
-func fetchDigitalTwinState(arch string) map[int]string {
+func fetchDigitalTwinState(arch string) []Thing {
 	// Phase 1: Data Anchor Resolution (Topology Retrieval)
 	topology, err := resolveTopology()
 	if err != nil {
@@ -136,7 +160,7 @@ func fetchDigitalTwinState(arch string) map[int]string {
 
 	// Architectural Decision Point
 	if arch == "Centralized" {
-		return extractStateFromTopology(topology)
+		return topology
 	}
 
 	// Phase 2 & 3: State Retrieval & Semantic Hydration (Federated)
@@ -178,49 +202,58 @@ func extractStateFromTopology(topology []Thing) map[int]string {
 }
 
 // enrichFederatedState implements Parallel Batch Retrieval and Semantic Hydration.
-func enrichFederatedState(topology []Thing) map[int]string {
-	results := make(map[int]string)
-	var mu sync.Mutex // Guards the "Semantic Hydration" into the map
+// enrichFederatedState implementa la "Hydration" sobre el grafo en memoria.
+func enrichFederatedState(topology []Thing) []Thing {
 	var wg sync.WaitGroup
+	var mu sync.Mutex
 
-	// Extract Data Anchors
+	// 1. GRAPH INDEXING (O(N)):
+	// Creamos un mapa de punteros para acceder rápidamente a los nodos del grafo
+	// por su Data Anchor (ExternalID). Esto simula la carga del grafo en memoria.
+	nodeIndex := make(map[int]*Thing, len(topology))
 	ids := make([]int32, len(topology))
-	for i, t := range topology {
-		ids[i] = int32(t.ExternalID)
+
+	for i := range topology {
+		// Guardamos puntero (&) para poder modificar el struct original
+		nodeIndex[topology[i].ExternalID] = &topology[i]
+		ids[i] = int32(topology[i].ExternalID)
 	}
 
-	// Batch Processing Loop
+	// 2. PARALLEL RETRIEVAL & HYDRATION
 	for i := 0; i < len(ids); i += BatchSize {
 		end := i + BatchSize
 		if end > len(ids) {
 			end = len(ids)
 		}
-
 		chunkIDs := ids[i:end]
-		wg.Add(1)
 
-		// Execute "Semantic Wrapper" retrieval in a goroutine
+		wg.Add(1)
 		go func(batch []int32) {
 			defer wg.Done()
 
-			// Phase 2: State Retrieval (ISU)
+			// State Retrieval (I/O Bound)
 			batchResults, err := fetchISUBatch(batch)
 			if err != nil {
-				log.Printf("ISU Batch Retrieval Error: %v", err)
+				log.Println("Error fetching batch:", err)
 				return
 			}
 
-			// Phase 3: Semantic Hydration (Merging into Global State)
+			// Semantic Hydration (CPU/Memory Bound)
+			// Aquí fusionamos el dato crudo con la entidad del grafo
 			mu.Lock()
-			for k, v := range batchResults {
-				results[k] = v
+			for id, val := range batchResults {
+				if node, exists := nodeIndex[id]; exists {
+					node.Value = val // <--- AQUÍ OCURRE LA HIDRATACIÓN REAL
+				}
 			}
 			mu.Unlock()
 		}(chunkIDs)
 	}
 
 	wg.Wait()
-	return results
+
+	// Devolvemos la topología original, ahora modificada (hidratada)
+	return topology
 }
 
 // fetchISUBatch executes the SQL Logic for "Last Known Value" retrieval.
