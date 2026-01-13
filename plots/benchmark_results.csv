@@ -1,0 +1,9 @@
+Scenario,Total_Nodes,Update_Hz,Architecture,DB_Latency_ms,E2E_Latency_ms,Loss_pct
+Home,200,1.0,Centralized,0.0,0.0,0.0
+Home,200,1.0,Decentralized,0.0,0.0,0.0
+Building,5000,2.0,Centralized,0.0,0.0,0.0
+Building,5000,2.0,Decentralized,0.0,0.0,0.0
+Factory,10000,1.0,Centralized,0.0,0.0,0.0
+Factory,10000,1.0,Decentralized,0.0,0.0,0.0
+Smart City,20000,1.0,Centralized,0.0,0.0,0.0
+Smart City,20000,1.0,Decentralized,0.0,0.0,0.0
