@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 # 1. Load Data
 # Asegúrate de que el CSV se llama igual que en tu código Go
-df = pd.read_csv("../test-go/read_test/read_evaluation_results.csv")
+df = pd.read_csv("../evaluation/output/query_evaluation_results.csv")
 
 # 2. Setup Plot Style
 sns.set_theme(style="whitegrid")
@@ -40,5 +40,5 @@ plt.grid(True, which="both", ls="--", alpha=0.5)
 
 # 5. Save
 plt.tight_layout()
-plt.savefig("paper_read_latency.png", dpi=300)
-print("Plot generated: paper_read_latency.png")
+plt.savefig("output/query_plot.png", dpi=300)
+print("Plot generated: query_plot.png")

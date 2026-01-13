@@ -5,6 +5,7 @@ go 1.25.4
 require (
 	github.com/dgraph-io/dgo/v2 v2.2.0
 	github.com/eclipse/paho.mqtt.golang v1.5.1
+	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9
 	google.golang.org/grpc v1.56.3
 )
@@ -12,7 +13,6 @@ require (
 require (
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/pkg/errors v0.8.1 // indirect
 	golang.org/x/net v0.44.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect

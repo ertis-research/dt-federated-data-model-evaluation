@@ -3,7 +3,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 # 1. Load Data
-df = pd.read_csv("../test-go/ingestion_test/final_evaluation_results.csv")
+df = pd.read_csv("../evaluation/output/ingestion_evaluation_results.csv")
 
 # 2. Setup Plot Style for Academic Paper
 sns.set_theme(style="whitegrid")
@@ -59,5 +59,5 @@ scenarios_desc = (
 plt.figtext(0.5, -0.05, scenarios_desc, ha="center", fontsize=10, bbox={"facecolor":"orange", "alpha":0.1, "pad":5})
 
 plt.tight_layout()
-plt.savefig("paper_evaluation_results.png", dpi=300, bbox_inches='tight')
-print("Plot generated: paper_evaluation_results.png")
+plt.savefig("output/ingestion_plot.png", dpi=300, bbox_inches='tight')
+print("Plot generated: ingestion_plot.png")
