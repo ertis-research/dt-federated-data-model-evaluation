@@ -31,8 +31,8 @@ const (
 	TopicPrefix       = "dt/sensor/"
 	OutputCSV         = "output/ingestion_evaluation_results.csv"
 	TotalRuns         = 10
-	TestDurationSec   = 10 // Duración de cada test
-	WarmupDurationSec = 5  // Duración del calentamiento
+	TestDurationSec   = 10 // Test duration
+	WarmupDurationSec = 5  // Warm-up duration
 	QoSLevel          = 1  // At least once
 )
 
@@ -49,7 +49,7 @@ var (
 type Scenario struct {
 	StepID          int
 	NumSensors      int
-	FrequencyHz     float64 // Frecuencia específica por escenario
+	FrequencyHz     float64
 	GraphComplexity int
 }
 
@@ -62,7 +62,7 @@ type Result struct {
 	AvgLatencyMs     float64
 	MessagesSent     int64
 	MessagesLost     int64
-	DbErrors         int64 // Nuevo: Errores de persistencia (Fairness)
+	DbErrors         int64
 	ThroughputMsgSec float64
 }
 
@@ -88,8 +88,6 @@ func main() {
 	writer := initCSVWriter()
 	defer writer.Flush()
 
-	// Definición exacta de tus escenarios
-	// Frecuencia: 10s = 0.1Hz, 5s = 0.2Hz, 2s = 0.5Hz
 	scenarios := []Scenario{
 		{StepID: 1, NumSensors: 100, FrequencyHz: 0.1, GraphComplexity: 200},
 		{StepID: 2, NumSensors: 500, FrequencyHz: 0.1, GraphComplexity: 500},
@@ -103,20 +101,17 @@ func main() {
 	fmt.Println("Starting INGESTION EVALUATION...")
 	fmt.Printf("QoS: %d | Duration: %d sec\n", QoSLevel, TestDurationSec)
 
-	// --- WARM UP PHASE ---
 	fmt.Println("\n>>> SYSTEM WARM-UP (5 seconds) <<<")
 	warmupSc := Scenario{StepID: 0, NumSensors: 500, FrequencyHz: 1.0, GraphComplexity: 1000}
 	prepareEnvironment(warmupSc.GraphComplexity, warmupSc.NumSensors)
 	executeTestRun(warmupSc, "Centralized", 0, true)
 	fmt.Println(">>> Warm-up Complete. Cooling down... <<<")
 	time.Sleep(3 * time.Second)
-	// ---------------------
 
 	for _, sc := range scenarios {
 		fmt.Printf("\n>>> STEP %d: %d Sensors @ %.2f Hz (%d Nodes) <<<\n",
 			sc.StepID, sc.NumSensors, sc.FrequencyHz, sc.GraphComplexity)
 
-		// Preparar topología antes de las ejecuciones de este escenario
 		prepareEnvironment(sc.GraphComplexity, sc.NumSensors)
 
 		for _, arch := range architectures {
@@ -125,7 +120,6 @@ func main() {
 
 				res := executeTestRun(sc, arch, run, false)
 
-				// Escritura en CSV con nuevas métricas
 				writer.Write([]string{
 					strconv.Itoa(res.StepID),
 					strconv.Itoa(res.NumSensors),
@@ -135,12 +129,11 @@ func main() {
 					strconv.Itoa(sc.GraphComplexity),
 					fmt.Sprintf("%.4f", res.AvgLatencyMs),
 					strconv.FormatInt(res.MessagesLost, 10),
-					strconv.FormatInt(res.DbErrors, 10), // Nueva columna
+					strconv.FormatInt(res.DbErrors, 10),
 					fmt.Sprintf("%.2f", res.ThroughputMsgSec),
 				})
 				writer.Flush()
 
-				// Mensaje en consola en inglés
 				fmt.Printf("   > Run %d: Sent(Confirmed)=%d | Lost(MQTT)=%d | DB_Errors=%d | Latency=%.2fms\n",
 					run, res.MessagesSent, res.MessagesLost, res.DbErrors, res.AvgLatencyMs)
 
@@ -159,7 +152,7 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 	var totalLatency int64 = 0
 	var msgReceivedCount int64 = 0
 	var msgSentCount int64 = 0
-	var dbErrorCount int64 = 0 // Contador atómico para errores de BD
+	var dbErrorCount int64 = 0
 
 	var muMetrics sync.Mutex
 
@@ -174,17 +167,15 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 	serverOpts := createMQTTOpts(fmt.Sprintf("srv_%s_%d_%d", arch, sc.NumSensors, runID))
 
 	serverOpts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
-		// Recuperar Timestamp
+
 		payloadStr := string(msg.Payload())
 		sentTimeNano, _ := strconv.ParseInt(payloadStr, 10, 64)
 		sentTime := time.Unix(0, sentTimeNano)
 
-		// Recuperar ID del sensor del topic
 		topic := msg.Topic()
 		sensorIDStr := topic[len(TopicPrefix):]
 		sensorID, _ := strconv.Atoi(sensorIDStr)
 
-		// ESCRITURA EN BD (Con manejo de errores explícito)
 		var err error
 		if arch == "Centralized" {
 			err = writeToDgraph(sensorID, payloadStr)
@@ -192,7 +183,6 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 			err = writeToTimescale(payloadStr)
 		}
 
-		// Si hay error en BD, lo registramos y NO contamos latencia para no ensuciar la media
 		if err != nil {
 			atomic.AddInt64(&dbErrorCount, 1)
 			return
@@ -217,8 +207,6 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 	// --- B. CLIENT SIDE ---
 	var wgSensors sync.WaitGroup
 
-	// Cálculo del ticker según la frecuencia del escenario
-	// Ejemplo: 0.1 Hz -> 1000 / 0.1 = 10,000 ms = 10s
 	tickerInterval := time.Duration(1000.0/sc.FrequencyHz) * time.Millisecond
 
 	for i := 0; i < sc.NumSensors; i++ {
@@ -233,7 +221,6 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 			}
 			defer c.Disconnect(0)
 
-			// Jitter inicial
 			time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
 
 			ticker := time.NewTicker(tickerInterval)
@@ -260,7 +247,7 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 	}
 
 	wgSensors.Wait()
-	time.Sleep(2 * time.Second) // Wait for inflight messages
+	time.Sleep(2 * time.Second)
 	srvClient.Disconnect(0)
 	close(done)
 
@@ -280,14 +267,14 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 		RunID:            runID,
 		AvgLatencyMs:     avgLat,
 		MessagesSent:     msgSentCount,
-		MessagesLost:     msgSentCount - msgReceivedCount - atomic.LoadInt64(&dbErrorCount), // Lost network
-		DbErrors:         atomic.LoadInt64(&dbErrorCount),                                   // Lost DB
+		MessagesLost:     msgSentCount - msgReceivedCount - atomic.LoadInt64(&dbErrorCount),
+		DbErrors:         atomic.LoadInt64(&dbErrorCount),
 		ThroughputMsgSec: throughput,
 	}
 }
 
 // ======================================================================================
-// SECTION III: PERSISTENCE LOGIC (Updated for Error Tracking)
+// SECTION III: PERSISTENCE LOGIC
 // ======================================================================================
 
 func writeToDgraph(sensorID int, val string) error {
@@ -300,7 +287,6 @@ func writeToDgraph(sensorID int, val string) error {
 	pb, _ := json.Marshal(d)
 
 	mu := &api.Mutation{SetJson: pb, CommitNow: true}
-	// Ahora devolvemos el error en lugar de ignorarlo
 	_, err := dgClient.NewTxn().Mutate(context.Background(), mu)
 	return err
 }

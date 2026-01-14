@@ -28,7 +28,6 @@ type Env struct {
 }
 
 func LoadEnv() Env {
-	// .env solo para desarrollo
 	if err := godotenv.Load(); err != nil {
 		log.Println(".env not found")
 	}
@@ -65,7 +64,7 @@ func (e Env) PostgresConn() string {
 func mustEnv(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
-		log.Fatalf("❌ variable de entorno %s no definida", key)
+		log.Fatalf("Environment variable %s is not defined", key)
 	}
 	return v
 }

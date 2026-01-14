@@ -1,5 +1,3 @@
-# helm install opentwinsv2-dgraph dgraph/dgraph -f kubernetes/dgraph/values.yaml
-
 zero:
   service:
     type: NodePort

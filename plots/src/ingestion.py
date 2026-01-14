@@ -19,7 +19,7 @@ df_mean = (
 )
 
 # ============================================================
-# Create human-readable scenario labels: <devices>@<frequency> Hz
+# <devices>@<frequency> Hz
 # ============================================================
 df_mean["Scenario_Label"] = (
     df_mean["Num_Sensors"].astype(str)
@@ -55,7 +55,7 @@ plt.rcParams.update({
 })
 
 # ============================================================
-# FIGURE 1: Average Latency (Bar Chart)
+# FIGURE 1: Average Latency
 # ============================================================
 plt.figure(figsize=(3.6, 3.2))
 
@@ -84,7 +84,7 @@ plt.savefig(
 )
 
 # ============================================================
-# FIGURE 2: Throughput (Bar Chart)
+# FIGURE 2: Throughput
 # ============================================================
 plt.figure(figsize=(3.6, 3.2))
 
@@ -113,7 +113,7 @@ plt.savefig(
 )
 
 # ============================================================
-# FIGURE 3: Packet Loss (Bar Chart)
+# FIGURE 3: Packet Loss
 # ============================================================
 plt.figure(figsize=(3.6, 3.2))
 

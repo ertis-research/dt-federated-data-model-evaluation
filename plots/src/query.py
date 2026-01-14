@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # ============================================================
-# Load query evaluation results
+# Load evaluation results
 # ============================================================
 df = pd.read_csv("../evaluation/output/query_evaluation_results.csv")
 
@@ -24,7 +24,7 @@ fed = df_stats[df_stats["Architecture"] == "Federated"]
 cen = df_stats[df_stats["Architecture"] == "Centralized"]
 
 # ============================================================
-# IEEE-compliant plotting style (consistent with ingestion plots)
+# IEEE-compliant plotting style
 # ============================================================
 plt.rcParams.update({
     "font.family": "serif",
@@ -35,7 +35,7 @@ plt.rcParams.update({
 })
 
 # ============================================================
-# FIGURE: Full Digital Twin State Retrieval Latency
+# FIGURE: Latency
 # ============================================================
 plt.figure(figsize=(3.6, 3.2))
 
