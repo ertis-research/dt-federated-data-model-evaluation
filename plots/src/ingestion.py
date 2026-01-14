@@ -74,7 +74,6 @@ plt.bar(
 
 plt.xlabel("Scenario (Devices@Frequency)")
 plt.ylabel("Average Latency (ms)")
-plt.title("Average Latency per Scenario")
 plt.xticks(x, labels, rotation=30, ha="right")
 plt.legend()
 
@@ -104,7 +103,6 @@ plt.bar(
 
 plt.xlabel("Scenario (Devices@Frequency)")
 plt.ylabel("Throughput (messages/s)")
-plt.title("Throughput per Scenario")
 plt.xticks(x, labels, rotation=30, ha="right")
 plt.legend()
 
@@ -134,7 +132,6 @@ plt.bar(
 
 plt.xlabel("Scenario (Devices@Frequency)")
 plt.ylabel("Packet Loss (messages)")
-plt.title("Packet Loss per Scenario")
 plt.xticks(x, labels, rotation=30, ha="right")
 plt.legend()
 

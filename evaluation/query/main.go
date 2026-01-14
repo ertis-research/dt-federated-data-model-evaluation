@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
-	"dt-real-bench/config"
+	"dt-real-bench/config" // Ensure this path matches your project structure
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -28,32 +28,35 @@ import (
 
 const (
 	OutputCSV      = "output/query_evaluation_results.csv"
-	RunsPerTest    = 10
+	RunsPerTest    = 10                     // Total valid measurement runs per scenario
+	WarmUpRuns     = 3                      // Warm-up runs to stabilize connection pools/JIT
 	BatchSize      = 500                    // Batch size for parallel ISU retrieval
-	SimulatedDelay = 100 * time.Millisecond // Throttle to prevent CPU saturation
+	SimulatedDelay = 100 * time.Millisecond // Inter-run delay to prevent CPU/IO saturation
 )
 
 // Global Shared State
 var (
 	cfg      config.Env
-	pgDB     *sql.DB     // Data Plane (ISU)
-	dgClient *dgo.Dgraph // Semantic Plane (Topology)
+	pgDB     *sql.DB     // Data Plane (ISU - Time Series Database)
+	dgClient *dgo.Dgraph // Semantic Plane (Topology - Knowledge Graph)
 )
 
-type QueryMetrics struct {
-	TotalLatency float64 // ms
-	IoWaitTime   float64 // ms (Tiempo esperando a Dgraph/Postgres)
-	CpuTime      float64 // ms (Tiempo haciendo Hydration/Parsing)
-	SuccessRate  float64 // % (Cuántos nodos llegaron bien vs esperados)
-}
-
-// Domain Entity
+// Domain Entity: Represents a node in the Digital Twin graph
 type Thing struct {
 	Uid        string   `json:"uid,omitempty"`
 	DType      []string `json:"dgraph.type,omitempty"`
 	Name       string   `json:"name,omitempty"`
-	ExternalID int      `json:"external_id,omitempty"` // The "Data Anchor"
-	Value      string   `json:"value,omitempty"`
+	ExternalID int      `json:"external_id,omitempty"` // The "Data Anchor" linking Graph to TSDB
+	Value      string   `json:"value,omitempty"`       // The dynamic state (hydrated at runtime)
+}
+
+// QueryMetrics: Captures detailed performance dimensions for a single execution
+type QueryMetrics struct {
+	RunID        int
+	TotalLatency float64 // End-to-end execution time (ms)
+	IoWaitTime   float64 // Time spent waiting for Database I/O (ms)
+	CpuTime      float64 // Time spent on Orchestration/Hydration logic (ms)
+	SuccessRate  float64 // Data Integrity percentage (0-100%)
 }
 
 // ======================================================================================
@@ -70,105 +73,138 @@ func main() {
 	writer := initCSVWriter()
 	defer writer.Flush()
 
-	// Scalability Scenarios
-	sensorCounts := []int{100, 500, 1000, 2000, 5000}
+	// Scalability Scenarios: Defined to test overhead across orders of magnitude
+	sensorCounts := []int{100, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000}
 	architectures := []string{"Centralized", "Federated"}
 
-	fmt.Printf("Starting QUERY EVALUATION (%d runs average)...\n", RunsPerTest)
+	fmt.Printf("Starting ACADEMIC QUERY EVALUATION (WarmUp: %d, Runs: %d)...\n", WarmUpRuns, RunsPerTest)
 
 	for _, count := range sensorCounts {
 		for _, arch := range architectures {
 			evaluateScenario(writer, arch, count)
 		}
 	}
-	fmt.Println("\nEvaluation Complete. Data saved to", OutputCSV)
+	fmt.Println("\nEvaluation Complete. Raw data saved to", OutputCSV)
 }
 
-// evaluateScenario handles the lifecycle of a single test case: Setup, Execution, and Logging.
+// evaluateScenario manages the lifecycle of a specific test configuration.
 func evaluateScenario(writer *csv.Writer, arch string, count int) {
 	fmt.Printf("\n--- Testing Architecture: %s | Sensors: %d ---\n", arch, count)
 
-	// A. Setup Phase
+	// A. Setup Phase: Prepare the environment state
 	fmt.Print("   > Setting up environment... ")
 	expectedValues := setupEnvironment(count)
 	performUpdates(arch, expectedValues)
 	fmt.Println("Ready.")
 
-	// B. Measurement Phase
-	avgTime, consistent := measurePerformance(arch, expectedValues)
-
-	// C. Reporting Phase
-	fmt.Printf("   > AVG Time: %.4f ms | Consistent: %v\n", avgTime, consistent)
-	logResult(writer, count, arch, avgTime, consistent)
+	// B. Measurement Phase: Execute runs and log data immediately
+	performBenchmarkSeries(writer, arch, count, expectedValues)
 }
 
-func measurePerformance(arch string, expectedValues map[int]string) (float64, bool) {
-	var totalDuration float64
-	consistent := true
+// performBenchmarkSeries executes the warm-up and measurement loops, logging every run.
+func performBenchmarkSeries(writer *csv.Writer, arch string, count int, expectedValues map[int]string) {
 
-	fmt.Print("   > Running queries: ")
-	for r := 0; r < RunsPerTest; r++ {
+	// --- PHASE 1: WARM-UP ---
+	// Executes queries without logging to stabilize system caches and connection pools.
+	if WarmUpRuns > 0 {
+		fmt.Print("   > Warming up: ")
+		for w := 0; w < WarmUpRuns; w++ {
+			fetchDigitalTwinState(arch) // Discard result
+			fmt.Print("~")
+			time.Sleep(SimulatedDelay)
+		}
+		fmt.Println(" Done.")
+	}
+
+	// --- PHASE 2: MEASUREMENT ---
+	fmt.Println("   > Measuring runs:")
+
+	for r := 1; r <= RunsPerTest; r++ {
 		time.Sleep(SimulatedDelay)
 
-		start := time.Now()
+		startTotal := time.Now()
 
 		// === ARCHITECTURAL ENTRY POINT ===
-		// CAMBIO: Ahora esto devuelve []Thing, no un mapa
-		hydratedGraph := fetchDigitalTwinState(arch)
+		// Retrieves the reconstructed Digital Twin state
+		graph, ioTime, cpuTime := fetchDigitalTwinState(arch)
 
-		totalDuration += time.Since(start).Seconds() * 1000
-		fmt.Printf(".")
+		totalDuration := time.Since(startTotal).Seconds() * 1000
 
-		// CAMBIO: Usamos la nueva función de verificación para grafos
-		if !verifyGraphData(expectedValues, hydratedGraph) {
-			consistent = false
-			log.Printf(" ! Consistency Violation in Run %d", r+1)
+		// Verification of Data Consistency
+		correctCount := countCorrectNodes(expectedValues, graph)
+		successRate := 100.0
+		if len(expectedValues) > 0 {
+			successRate = (float64(correctCount) / float64(len(expectedValues))) * 100.0
 		}
-	}
-	fmt.Println(" Done.")
 
-	return totalDuration / float64(RunsPerTest), consistent
-}
-
-// Nueva función de verificación que acepta el Grafo
-func verifyGraphData(expected map[int]string, graph []Thing) bool {
-	if len(expected) != len(graph) {
-		return false
-	}
-	// Recorremos el grafo resultante para ver si coincide con lo esperado
-	for _, node := range graph {
-		expVal, ok := expected[node.ExternalID]
-		if !ok || node.Value != expVal {
-			return false
+		if correctCount != len(expectedValues) {
+			log.Printf("     [!] Consistency Violation in Run %d: Got %d/%d", r, correctCount, len(expectedValues))
 		}
+
+		// Metric Consolidation
+		metrics := QueryMetrics{
+			RunID:        r,
+			TotalLatency: totalDuration,
+			IoWaitTime:   ioTime,
+			CpuTime:      cpuTime,
+			SuccessRate:  successRate,
+		}
+
+		// Console Logging (Real-time feedback)
+		fmt.Printf("     Run %d: Latency=%.2fms | I/O=%.2fms | Overhead=%.2fms | Success=%.2f%%\n",
+			r, metrics.TotalLatency, metrics.IoWaitTime, metrics.CpuTime, metrics.SuccessRate)
+
+		// CSV Logging (Persist raw data)
+		logResult(writer, count, arch, metrics)
 	}
-	return true
 }
 
 // ======================================================================================
 // SECTION II: FEDERATED ORCHESTRATION ENGINE
-// This section implements the "Lazy Evaluation" and "Graph Enrichment" strategies.
 // ======================================================================================
 
-// fetchDigitalTwinState orchestrates the reconstruction of the global DT state.
-func fetchDigitalTwinState(arch string) []Thing {
-	// Phase 1: Data Anchor Resolution (Topology Retrieval)
+// fetchDigitalTwinState orchestrates the retrieval process based on the architecture.
+// Returns: (Hydrated Graph, Estimated I/O Time, Estimated CPU Overhead)
+func fetchDigitalTwinState(arch string) ([]Thing, float64, float64) {
+	var ioDuration, cpuDuration float64
+
+	// Step 1: Data Anchor Resolution (Topology Retrieval - I/O Bound)
+	// The orchestrator queries the Knowledge Graph to understand the asset structure.
+	t0 := time.Now()
 	topology, err := resolveTopology()
 	if err != nil {
 		log.Fatalf("Topology Resolution Failed: %v", err)
 	}
+	ioDuration += time.Since(t0).Seconds() * 1000
 
 	// Architectural Decision Point
 	if arch == "Centralized" {
-		return topology
+		// In the monolithic approach, state is co-located with topology.
+		// Retrieval is a single I/O operation. Overhead is negligible.
+		return topology, ioDuration, 0
 	}
 
-	// Phase 2 & 3: State Retrieval & Semantic Hydration (Federated)
-	return enrichFederatedState(topology)
+	// Step 2 & 3: State Retrieval & Semantic Hydration (Federated Approach)
+	t1 := time.Now()
+
+	// enrichFederatedStateMetrics handles the parallel retrieval and in-memory fusion.
+	enrichedGraph, maxBatchIOTime := enrichFederatedStateMetrics(topology)
+
+	totalFederatedTime := time.Since(t1).Seconds() * 1000
+
+	// Overhead Calculation:
+	// Total Time = (Waiting for slowest DB batch) + (CPU time for Hydration/Marshalling)
+	ioDuration += maxBatchIOTime
+
+	cpuDuration = totalFederatedTime - maxBatchIOTime
+	if cpuDuration < 0 {
+		cpuDuration = 0 // Correction for clock skew in micro-benchmarks
+	}
+
+	return enrichedGraph, ioDuration, cpuDuration
 }
 
-// resolveTopology Queries the KG to identify active assets and their Data Anchors.
-// Corresponds to: "The orchestrator loads the DT KG... accessing the associated Data Anchors."
+// resolveTopology queries the Dgraph KG to retrieve active assets and Data Anchors.
 func resolveTopology() ([]Thing, error) {
 	ctx := context.Background()
 	q := `
@@ -176,6 +212,9 @@ func resolveTopology() ([]Thing, error) {
 		things(func: type(Thing)) {
 			external_id
 			value
+			dgraph.type
+			uid
+			name
 		}
 	}`
 	resp, err := dgClient.NewTxn().Query(ctx, q)
@@ -192,58 +231,58 @@ func resolveTopology() ([]Thing, error) {
 	return decode.Things, nil
 }
 
-// extractStateFromTopology represents the monolithic approach where state resides in the graph.
-func extractStateFromTopology(topology []Thing) map[int]string {
-	results := make(map[int]string)
-	for _, t := range topology {
-		results[t.ExternalID] = t.Value
-	}
-	return results
-}
-
-// enrichFederatedState implements Parallel Batch Retrieval and Semantic Hydration.
-// enrichFederatedState implementa la "Hydration" sobre el grafo en memoria.
-func enrichFederatedState(topology []Thing) []Thing {
-	var wg sync.WaitGroup
+// enrichFederatedStateMetrics implements the "Lazy Evaluation" strategy.
+// It performs parallel batch retrieval and Semantic Hydration (in-memory join).
+func enrichFederatedStateMetrics(topology []Thing) ([]Thing, float64) {
 	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var maxIOTime float64 // Tracks the bottleneck batch (slowest I/O operation)
 
-	// 1. GRAPH INDEXING (O(N)):
-	// Creamos un mapa de punteros para acceder rápidamente a los nodos del grafo
-	// por su Data Anchor (ExternalID). Esto simula la carga del grafo en memoria.
+	// 1. Graph Indexing (O(N))
+	// Simulates loading the KG topology into an efficient memory structure for hydration.
 	nodeIndex := make(map[int]*Thing, len(topology))
 	ids := make([]int32, len(topology))
-
 	for i := range topology {
-		// Guardamos puntero (&) para poder modificar el struct original
 		nodeIndex[topology[i].ExternalID] = &topology[i]
 		ids[i] = int32(topology[i].ExternalID)
 	}
 
-	// 2. PARALLEL RETRIEVAL & HYDRATION
+	// 2. Parallel Batch Retrieval Loop
 	for i := 0; i < len(ids); i += BatchSize {
 		end := i + BatchSize
 		if end > len(ids) {
 			end = len(ids)
 		}
-		chunkIDs := ids[i:end]
 
+		chunkIDs := ids[i:end]
 		wg.Add(1)
+
 		go func(batch []int32) {
 			defer wg.Done()
 
-			// State Retrieval (I/O Bound)
+			// Measurement: Database I/O Time (State Retrieval)
+			tStartDB := time.Now()
 			batchResults, err := fetchISUBatch(batch)
+			durDB := time.Since(tStartDB).Seconds() * 1000
+
 			if err != nil {
-				log.Println("Error fetching batch:", err)
+				log.Printf("ISU Batch Retrieval Error: %v", err)
 				return
 			}
 
-			// Semantic Hydration (CPU/Memory Bound)
-			// Aquí fusionamos el dato crudo con la entidad del grafo
+			// Critical Section: Metric aggregation and Semantic Hydration
 			mu.Lock()
+			// The effective I/O wait is determined by the slowest parallel batch
+			if durDB > maxIOTime {
+				maxIOTime = durDB
+			}
+
+			// 3. Semantic Hydration (CPU Bound)
+			// Injection of operational state into the semantic graph nodes.
 			for id, val := range batchResults {
 				if node, exists := nodeIndex[id]; exists {
-					node.Value = val // <--- AQUÍ OCURRE LA HIDRATACIÓN REAL
+					node.Value = val
+					// Note: Additional logic for "Structural Flattening" could be simulated here.
 				}
 			}
 			mu.Unlock()
@@ -251,15 +290,13 @@ func enrichFederatedState(topology []Thing) []Thing {
 	}
 
 	wg.Wait()
-
-	// Devolvemos la topología original, ahora modificada (hidratada)
-	return topology
+	return topology, maxIOTime
 }
 
-// fetchISUBatch executes the SQL Logic for "Last Known Value" retrieval.
-// Represents the "Semantic Wrapper" abstraction layer.
+// fetchISUBatch executes the "Last Known Value" query on the Time Series Database.
+// This simulates the Semantic Wrapper abstraction layer.
 func fetchISUBatch(ids []int32) (map[int]string, error) {
-	// Query implements: "Select most recent record such that t_data <= t"
+	// Query Strategy: DISTINCT ON to retrieve the latest record per sensor
 	query := `
 		SELECT DISTINCT ON (sensor_id) sensor_id, payload
 		FROM query_test
@@ -288,18 +325,24 @@ func fetchISUBatch(ids []int32) (map[int]string, error) {
 // ======================================================================================
 
 func initInfrastructure() {
-	// Dgraph Connection
+	// Dgraph Connection Setup
 	conn, err := grpc.Dial(cfg.DgraphURI, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Semantic Plane Init Failed: %v", err)
 	}
 	dgClient = dgo.NewDgraphClient(api.NewDgraphClient(conn))
 
-	// Postgres Connection
+	// Postgres Connection Setup
 	pgDB, err = sql.Open("postgres", cfg.PostgresConn())
 	if err != nil {
 		log.Fatalf("Data Plane Init Failed: %v", err)
 	}
+
+	// Connection Pool Tuning for High Concurrency
+	pgDB.SetMaxOpenConns(50)
+	pgDB.SetMaxIdleConns(25)
+	pgDB.SetConnMaxLifetime(5 * time.Minute)
+
 	initDBSchema()
 }
 
@@ -321,29 +364,41 @@ func initCSVWriter() *csv.Writer {
 		log.Fatalf("Failed to create CSV: %v", err)
 	}
 	writer := csv.NewWriter(file)
-	writer.Write([]string{"Num_Sensors", "Architecture", "Avg_Read_Time_ms", "Runs_Count", "Consistent"})
+	// Expanded headers to support statistical post-processing
+	writer.Write([]string{
+		"Num_Sensors",
+		"Architecture",
+		"Run_ID",
+		"Total_Latency_ms",
+		"IO_Wait_ms",
+		"Orchestration_Overhead_ms",
+		"Success_Rate_Pct",
+	})
 	writer.Flush()
 	return writer
 }
 
-func logResult(w *csv.Writer, count int, arch string, time float64, consistent bool) {
+func logResult(w *csv.Writer, count int, arch string, m QueryMetrics) {
 	w.Write([]string{
 		strconv.Itoa(count),
 		arch,
-		fmt.Sprintf("%.4f", time),
-		strconv.Itoa(RunsPerTest),
-		strconv.FormatBool(consistent),
+		strconv.Itoa(m.RunID),
+		fmt.Sprintf("%.4f", m.TotalLatency),
+		fmt.Sprintf("%.4f", m.IoWaitTime),
+		fmt.Sprintf("%.4f", m.CpuTime),
+		fmt.Sprintf("%.2f", m.SuccessRate),
 	})
 	w.Flush()
 }
 
-// setupEnvironment prepares the topology. Note: It does not populate data values for Federated mode,
-// as those are inserted via performUpdates.
+// setupEnvironment prepares the topological structure for the experiment.
+// It ensures a clean state before every scenario.
 func setupEnvironment(count int) map[int]string {
 	ctx := context.Background()
 	dgClient.Alter(ctx, &api.Operation{DropAll: true})
 	pgDB.Exec("TRUNCATE TABLE query_test")
 
+	// Define Schema
 	dgClient.Alter(ctx, &api.Operation{Schema: `
 		external_id: int @index(int) .
 		value: string .
@@ -356,6 +411,7 @@ func setupEnvironment(count int) map[int]string {
 	expected := make(map[int]string)
 	var nodes []Thing
 
+	// Generate Synthetic Data
 	for i := 1; i <= count; i++ {
 		val := fmt.Sprintf("val_%d_%d", i, rand.Intn(9999))
 		expected[i] = val
@@ -368,7 +424,7 @@ func setupEnvironment(count int) map[int]string {
 		nodes = append(nodes, node)
 	}
 
-	// Bulk Mutation
+	// Bulk Mutation (Topology Injection)
 	batchSize := 1000
 	for i := 0; i < len(nodes); i += batchSize {
 		end := i + batchSize
@@ -381,10 +437,11 @@ func setupEnvironment(count int) map[int]string {
 	return expected
 }
 
+// performUpdates injects the state values into the appropriate data store based on architecture.
 func performUpdates(arch string, data map[int]string) {
 	ctx := context.Background()
 	if arch == "Centralized" {
-		// Update KG directly (Anti-Pattern for high frequency)
+		// Centralized: Update KG directly (State is monolithic)
 		q := `{ me(func: has(external_id)) { uid, external_id } }`
 		resp, _ := dgClient.NewTxn().Query(ctx, q)
 		var decode struct {
@@ -401,14 +458,23 @@ func performUpdates(arch string, data map[int]string) {
 				mutations = append(mutations, Thing{Uid: node.Uid, Value: val})
 			}
 		}
-		jsonBytes, _ := json.Marshal(mutations)
-		dgClient.NewTxn().Mutate(ctx, &api.Mutation{SetJson: jsonBytes, CommitNow: true})
+		// Batch mutation
+		batchSize := 1000
+		for i := 0; i < len(mutations); i += batchSize {
+			end := i + batchSize
+			if end > len(mutations) {
+				end = len(mutations)
+			}
+			jsonBytes, _ := json.Marshal(mutations[i:end])
+			dgClient.NewTxn().Mutate(ctx, &api.Mutation{SetJson: jsonBytes, CommitNow: true})
+		}
 
 	} else {
-		// Insert into TSDB (Preferred pattern)
+		// Federated: Insert into TSDB (State is distributed)
 		tx, _ := pgDB.Begin()
 		stmtIns, _ := tx.Prepare("INSERT INTO query_test (time, sensor_id, payload) VALUES (NOW(), $1, $2)")
 		defer stmtIns.Close()
+
 		for id, val := range data {
 			stmtIns.Exec(id, val)
 		}
@@ -416,14 +482,15 @@ func performUpdates(arch string, data map[int]string) {
 	}
 }
 
-func verifyData(expected map[int]string, retrieved map[int]string) bool {
-	if len(expected) != len(retrieved) {
-		return false
-	}
-	for id, expVal := range expected {
-		if gotVal, ok := retrieved[id]; !ok || gotVal != expVal {
-			return false
+// countCorrectNodes validates the integrity of the hydrated graph against expected values.
+func countCorrectNodes(expected map[int]string, graph []Thing) int {
+	correct := 0
+	for _, node := range graph {
+		if expVal, ok := expected[node.ExternalID]; ok {
+			if node.Value == expVal {
+				correct++
+			}
 		}
 	}
-	return true
+	return correct
 }
