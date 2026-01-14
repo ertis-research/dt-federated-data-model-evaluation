@@ -1,0 +1,8 @@
+replicaCount: 3
+
+service:
+  type: LoadBalancer
+  mqtt: 1883
+
+persistence:
+  enabled: true
