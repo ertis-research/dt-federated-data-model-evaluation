@@ -16,7 +16,7 @@ Ensure your environment meets the following technical requirements:
 #### Deployment
 Follow the instructions below to deploy the infrastructure.
 
-**1. DGraph (KG Database)**
+##### DGraph (KG Database)
 ```bash
 # Add the DGraph Helm repository
 helm repo add dgraph https://charts.dgraph.io
@@ -25,12 +25,12 @@ helm repo add dgraph https://charts.dgraph.io
 helm install dgraph dgraph/dgraph -f kubernetes/dgraph.yaml
 ```
 
-**2. TimescaleDB (Time-Series Database)**
+##### TimescaleDB (Time-Series Database)
 ```bash
 kubectl apply -f kubernetes/timescaledb.yaml
 ```
 
-**3. EMQX (MQTT Broker)**
+##### EMQX (MQTT Broker)
 ```bash
 # Add the EMQX Helm repository
 helm repo add emqx https://repos.emqx.io/charts
