@@ -28,6 +28,7 @@ cen = df_stats[df_stats["Architecture"] == "Centralized"]
 # ============================================================
 plt.rcParams.update({
     "font.family": "serif",
+    "font.serif": ["Times New Roman"],
     "font.size": 10,
     "axes.grid": True,
     "grid.linestyle": "--",
