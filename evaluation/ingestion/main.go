@@ -7,10 +7,14 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,12 +33,23 @@ import (
 
 const (
 	TopicPrefix       = "dt/sensor/"
-	OutputCSV         = "output/ingestion_evaluation_results.csv"
-	TotalRuns         = 10
-	TestDurationSec   = 10 // Test duration
-	WarmupDurationSec = 5  // Warm-up duration
-	QoSLevel          = 1  // At least once
+	OutputCSV         = "output/ingestion_evaluation_results2.csv"
+	TotalRuns         = 5
+	TestDurationSec   = 120 // Test duration
+	WarmupDurationSec = 60  // Warm-up duration
+	QoSLevel          = 1   // At least once
 )
+
+type PromResponse struct {
+	Status string `json:"status"`
+	Data   struct {
+		ResultType string `json:"resultType"`
+		Result     []struct {
+			Metric map[string]string `json:"metric"`
+			Value  []interface{}     `json:"value"` // Ej: [1678886400, "1.245"]
+		} `json:"result"`
+	} `json:"data"`
+}
 
 // Global Infrastructure
 var (
@@ -54,16 +69,18 @@ type Scenario struct {
 }
 
 type Result struct {
-	StepID           int
-	NumSensors       int
-	Architecture     string
-	RunID            int
-	FrequencyHz      float64
-	AvgLatencyMs     float64
-	MessagesSent     int64
-	MessagesLost     int64
-	DbErrors         int64
-	ThroughputMsgSec float64
+	StepID            int
+	NumSensors        int
+	Architecture      string
+	RunID             int
+	FrequencyHz       float64
+	AvgLatencyMs      float64
+	MessagesSent      int64
+	MessagesLost      int64
+	DbErrors          int64
+	ThroughputMsgSec  float64
+	TargetCPUAvgCores float64
+	TargetRAMMaxMB    float64
 }
 
 type SensorNode struct {
@@ -101,7 +118,10 @@ func main() {
 	fmt.Println("Starting INGESTION EVALUATION...")
 	fmt.Printf("QoS: %d | Duration: %d sec\n", QoSLevel, TestDurationSec)
 
-	fmt.Println("\n>>> SYSTEM WARM-UP (5 seconds) <<<")
+	samplePayload := fmt.Sprintf("%d", time.Now().UnixNano())
+	fmt.Printf("Application Payload Size: %d bytes (Sample: %s)\n", len(samplePayload), samplePayload)
+
+	fmt.Println("\n>>> SYSTEM WARM-UP (60 seconds) <<<")
 	warmupSc := Scenario{StepID: 0, NumSensors: 500, FrequencyHz: 1.0, GraphComplexity: 1000}
 	prepareEnvironment(warmupSc.GraphComplexity, warmupSc.NumSensors)
 	executeTestRun(warmupSc, "Centralized", 0, true)
@@ -131,11 +151,13 @@ func main() {
 					strconv.FormatInt(res.MessagesLost, 10),
 					strconv.FormatInt(res.DbErrors, 10),
 					fmt.Sprintf("%.2f", res.ThroughputMsgSec),
+					fmt.Sprintf("%.3f", res.TargetCPUAvgCores),
+					fmt.Sprintf("%.2f", res.TargetRAMMaxMB),
 				})
 				writer.Flush()
 
-				fmt.Printf("   > Run %d: Sent(Confirmed)=%d | Lost(MQTT)=%d | DB_Errors=%d | Latency=%.2fms\n",
-					run, res.MessagesSent, res.MessagesLost, res.DbErrors, res.AvgLatencyMs)
+				fmt.Printf("   > Run %d: Sent=%d | Lost=%d | DB_Err=%d | Lat=%.2fms | CPU=%.3fc | RAM=%.2fMB\n",
+					run, res.MessagesSent, res.MessagesLost, res.DbErrors, res.AvgLatencyMs, res.TargetCPUAvgCores, res.TargetRAMMaxMB)
 
 				time.Sleep(2 * time.Second)
 			}
@@ -155,6 +177,7 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 	var dbErrorCount int64 = 0
 
 	var muMetrics sync.Mutex
+	var wgServer sync.WaitGroup
 
 	duration := TestDurationSec
 	if isWarmup {
@@ -165,35 +188,45 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 
 	// --- A. SERVER SIDE ---
 	serverOpts := createMQTTOpts(fmt.Sprintf("srv_%s_%d_%d", arch, sc.NumSensors, runID))
+	serverOpts.SetOrderMatters(false) // Permite procesamiento asíncrono real
+	serverOpts.SetMessageChannelDepth(10000)
 
 	serverOpts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
 
+		// Extraer los datos de la red lo más rápido posible
 		payloadStr := string(msg.Payload())
-		sentTimeNano, _ := strconv.ParseInt(payloadStr, 10, 64)
-		sentTime := time.Unix(0, sentTimeNano)
-
 		topic := msg.Topic()
-		sensorIDStr := topic[len(TopicPrefix):]
-		sensorID, _ := strconv.Atoi(sensorIDStr)
 
-		var err error
-		if arch == "Centralized" {
-			err = writeToDgraph(sensorID, payloadStr)
-		} else {
-			err = writeToTimescale(payloadStr)
-		}
+		// Procesar asíncronamente para no bloquear el router de MQTT
+		wgServer.Add(1)
+		go func(pStr, tStr string) {
+			defer wgServer.Done()
+			sentTimeNano, _ := strconv.ParseInt(pStr, 10, 64)
+			sentTime := time.Unix(0, sentTimeNano)
 
-		if err != nil {
-			atomic.AddInt64(&dbErrorCount, 1)
-			return
-		}
+			parts := strings.Split(tStr, "/")
+			sensorID, _ := strconv.Atoi(parts[len(parts)-1])
 
-		latencyMicro := time.Since(sentTime).Microseconds()
+			var err error
+			if arch == "Centralized" {
+				err = writeToDgraph(sensorID, pStr)
+			} else {
+				err = writeToTimescale(pStr)
+			}
 
-		muMetrics.Lock()
-		totalLatency += latencyMicro
-		msgReceivedCount++
-		muMetrics.Unlock()
+			if err != nil {
+				atomic.AddInt64(&dbErrorCount, 1)
+				// Opcional: log.Printf("DB Error: %v", err)
+				return
+			}
+
+			latencyMicro := time.Since(sentTime).Microseconds()
+
+			muMetrics.Lock()
+			totalLatency += latencyMicro
+			msgReceivedCount++
+			muMetrics.Unlock()
+		}(payloadStr, topic) // Pasar variables por valor a la gorutina
 	})
 
 	srvClient := mqtt.NewClient(serverOpts)
@@ -201,13 +234,16 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 		log.Printf("Server Connect Error: %v", token.Error())
 		return Result{}
 	}
-	srvClient.Subscribe(TopicPrefix+"#", QoSLevel, nil)
+	runTopicPrefix := fmt.Sprintf("%s%s/step%d/run%d/", TopicPrefix, arch, sc.StepID, runID)
+	srvClient.Subscribe(runTopicPrefix+"#", QoSLevel, nil)
 	time.Sleep(1 * time.Second)
 
 	// --- B. CLIENT SIDE ---
 	var wgSensors sync.WaitGroup
 
 	tickerInterval := time.Duration(1000.0/sc.FrequencyHz) * time.Millisecond
+
+	startTime := time.Now()
 
 	for i := 0; i < sc.NumSensors; i++ {
 		wgSensors.Add(1)
@@ -217,6 +253,7 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 			cOpts := createMQTTOpts(fmt.Sprintf("s_%d_%d_%d_%d", sc.StepID, sc.NumSensors, runID, id))
 			c := mqtt.NewClient(cOpts)
 			if token := c.Connect(); token.Wait() && token.Error() != nil {
+				log.Printf("Sensor %d fails connection: %v", id, token.Error())
 				return
 			}
 			defer c.Disconnect(0)
@@ -233,7 +270,8 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 					return
 				case <-ticker.C:
 					payload := fmt.Sprintf("%d", time.Now().UnixNano())
-					t := c.Publish(TopicPrefix+strconv.Itoa(id), QoSLevel, false, payload)
+					runTopicPrefix := fmt.Sprintf("%s%s/step%d/run%d/", TopicPrefix, arch, sc.StepID, runID)
+					t := c.Publish(runTopicPrefix+strconv.Itoa(id), QoSLevel, false, payload)
 					t.Wait()
 
 					if t.Error() == nil {
@@ -248,8 +286,55 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 
 	wgSensors.Wait()
 	time.Sleep(2 * time.Second)
-	srvClient.Disconnect(0)
+
+	fmt.Println("   > Sensors finished. Waiting for database to securely process queue...")
+	serverDone := make(chan struct{})
+	go func() {
+		wgServer.Wait() // Espera a que todas las inserciones en BD terminen
+		close(serverDone)
+	}()
+
+	// Damos un margen amplio (hasta 4 minutos) para evitar que las gorutinas se fuguen al siguiente run.
+	select {
+	case <-serverDone:
+		fmt.Println("   > All messages successfully written to DB.")
+	case <-time.After(4 * time.Minute):
+		fmt.Println("   > [WARNING] DB drain timeout reached (4 min). DB is strictly bottlenecked.")
+	}
+
+	endTime := time.Now() // Calculamos el tiempo total de estrés de la BD
+	srvClient.Disconnect(250)
 	close(done)
+
+	var cpuAvg, ramMaxMB float64
+	if !isWarmup {
+		fmt.Println("   > Waiting for Prometheus scraping (15s)...")
+		time.Sleep(15 * time.Second)
+
+		promURL := cfg.PrometheusURI
+		myNamespace := cfg.KubernetesNamespace
+
+		podRegex := "timescaledb-.*"
+		if arch == "Centralized" {
+			podRegex = "dgraph-dgraph-alpha-.*"
+		}
+
+		windowSec := int(endTime.Sub(startTime).Seconds())
+
+		cpuQuery := fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{namespace="%s", pod=~"%s", container!="POD", container!=""}[%ds]))`, myNamespace, podRegex, windowSec)
+		ramQuery := fmt.Sprintf(`sum(max_over_time(container_memory_working_set_bytes{namespace="%s", pod=~"%s", container!="POD", container!=""}[%ds])) / 1024 / 1024`, myNamespace, podRegex, windowSec)
+
+		var errCPU, errRAM error
+		cpuAvg, errCPU = queryPrometheus(promURL, cpuQuery, endTime)
+		if errCPU != nil {
+			fmt.Printf("   [!] Error Prometheus CPU: %v\n", errCPU)
+		}
+
+		ramMaxMB, errRAM = queryPrometheus(promURL, ramQuery, endTime)
+		if errRAM != nil {
+			fmt.Printf("   [!] Error Prometheus RAM: %v\n", errRAM)
+		}
+	}
 
 	// --- C. STATS ---
 	avgLat := 0.0
@@ -260,16 +345,18 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 	throughput := float64(msgReceivedCount) / float64(duration)
 
 	return Result{
-		StepID:           sc.StepID,
-		NumSensors:       sc.NumSensors,
-		FrequencyHz:      sc.FrequencyHz,
-		Architecture:     arch,
-		RunID:            runID,
-		AvgLatencyMs:     avgLat,
-		MessagesSent:     msgSentCount,
-		MessagesLost:     msgSentCount - msgReceivedCount - atomic.LoadInt64(&dbErrorCount),
-		DbErrors:         atomic.LoadInt64(&dbErrorCount),
-		ThroughputMsgSec: throughput,
+		StepID:            sc.StepID,
+		NumSensors:        sc.NumSensors,
+		FrequencyHz:       sc.FrequencyHz,
+		Architecture:      arch,
+		RunID:             runID,
+		AvgLatencyMs:      avgLat,
+		MessagesSent:      msgSentCount,
+		MessagesLost:      msgSentCount - msgReceivedCount - atomic.LoadInt64(&dbErrorCount),
+		DbErrors:          atomic.LoadInt64(&dbErrorCount),
+		ThroughputMsgSec:  throughput,
+		TargetCPUAvgCores: cpuAvg,
+		TargetRAMMaxMB:    ramMaxMB,
 	}
 }
 
@@ -354,6 +441,9 @@ func initInfrastructure() {
 		log.Fatal(err)
 	}
 
+	pgDB.SetMaxOpenConns(100)
+	pgDB.SetMaxIdleConns(20)
+
 	pgDB.Exec("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")
 	pgDB.Exec("CREATE TABLE IF NOT EXISTS ingestion_test (time TIMESTAMPTZ NOT NULL, payload TEXT);")
 	pgDB.Exec("SELECT create_hypertable('ingestion_test', 'time', if_not_exists => TRUE);")
@@ -382,7 +472,40 @@ func initCSVWriter() *csv.Writer {
 	writer.Write([]string{
 		"Step_ID", "Num_Sensors", "Freq_Hz", "Architecture", "Run_ID", "Graph_Complexity",
 		"Avg_Latency_ms", "Packet_Loss_Network", "DB_Errors", "Throughput_msg_sec",
+		"DB_CPU_Avg_Cores", "DB_RAM_Max_MB",
 	})
 	writer.Flush()
 	return writer
+}
+
+func queryPrometheus(promURL string, query string, evalTime time.Time) (float64, error) {
+	// Construir la URL con los parámetros
+	reqURL := fmt.Sprintf("%s/api/v1/query?query=%s&time=%d",
+		promURL,
+		url.QueryEscape(query),
+		evalTime.Unix())
+
+	resp, err := http.Get(reqURL)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("error HTTP Prometheus: %d", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var promData PromResponse
+	if err := json.Unmarshal(body, &promData); err != nil {
+		return 0, err
+	}
+
+	// Extraer el valor flotante del primer resultado
+	if len(promData.Data.Result) > 0 && len(promData.Data.Result[0].Value) == 2 {
+		valStr := fmt.Sprintf("%v", promData.Data.Result[0].Value[1])
+		return strconv.ParseFloat(valStr, 64)
+	}
+
+	return 0, fmt.Errorf("no data returned from Prometheus")
 }

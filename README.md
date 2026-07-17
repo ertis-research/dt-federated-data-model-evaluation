@@ -1,7 +1,3 @@
-> [!CAUTION]
-> This repository has been anonymized to adhere to double-blind review standards.
-> The source code and configuration files have been migrated from the original development repository to this temporary location to preserve author anonymity.
-
 To replicate the results presented in the paper, please follow the steps outlined below.
 
 ## Infrastructure
@@ -9,7 +5,7 @@ To replicate the results presented in the paper, please follow the steps outline
 Ensure your environment meets the following technical requirements:
 
 - **Kubernetes Cluster:** A running cluster.
-- **Go:** Version 1.25.4.
+- **Go:** Version 1.25
 - **Helm:** For managing package installations.
 - **kubectl:** Configured to interface with your cluster.
 
@@ -36,7 +32,7 @@ kubectl apply -f kubernetes/timescaledb.yaml
 helm repo add emqx https://repos.emqx.io/charts
 
 # Install EMQX
-helm install emqx emqx/emqx --version 5.5.0 -n emqx -f kubernetes/emqx.yml
+helm install emqx emqx/emqx --version 5.5.0 -f kubernetes/emqx.yaml
 ```
 
 ## Evaluation

@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -27,11 +28,11 @@ import (
 // ======================================================================================
 
 const (
-	OutputCSV      = "output/query_evaluation_results.csv"
-	RunsPerTest    = 10                     // Total valid measurement runs per scenario
-	WarmUpRuns     = 3                      // Warm-up runs to stabilize connection pools/JIT
+	OutputCSV      = "output/query_evaluation_results2.csv"
+	RunsPerTest    = 20                     // Total valid measurement runs per scenario
+	WarmUpRuns     = 5                      // Warm-up runs to stabilize connection pools/JIT
 	BatchSize      = 500                    // Batch size for parallel ISU retrieval
-	SimulatedDelay = 100 * time.Millisecond // Inter-run delay to prevent CPU/IO saturation
+	SimulatedDelay = 300 * time.Millisecond // Inter-run delay to prevent CPU/IO saturation
 )
 
 // Global Shared State
@@ -56,6 +57,7 @@ type QueryMetrics struct {
 	IoWaitTime   float64 // Time spent waiting for Database I/O (ms)
 	CpuTime      float64 // Time spent on Orchestration/Hydration logic (ms)
 	SuccessRate  float64 // Data Integrity percentage (0-100%)
+	MemAllocMB   float64 // RAM consumida durante la ejecución (en MB)
 }
 
 // ======================================================================================
@@ -118,17 +120,32 @@ func performBenchmarkSeries(writer *csv.Writer, arch string, count int, expected
 	fmt.Println("   > Measuring runs:")
 
 	for r := 1; r <= RunsPerTest; r++ {
+		// 1. Pausa para estabilizar la red antes del siguiente run
 		time.Sleep(SimulatedDelay)
 
+		var memBefore, memAfter runtime.MemStats
+
+		// 2. Leemos la memoria SIN forzar el Garbage Collector.
+		// Esto es muy rápido y no interrumpe los hilos de red subyacentes.
+		runtime.ReadMemStats(&memBefore)
+
+		// 3. Iniciamos el cronómetro
 		startTotal := time.Now()
 
 		// === ARCHITECTURAL ENTRY POINT ===
-		// Retrieves the reconstructed DT state
 		graph, ioTime, cpuTime := fetchDigitalTwinState(arch)
 
+		// 4. Detenemos el cronómetro inmediatamente
 		totalDuration := time.Since(startTotal).Seconds() * 1000
 
-		// Verification of data consistency
+		// 5. Leemos la memoria al finalizar
+		runtime.ReadMemStats(&memAfter)
+
+		// Como TotalAlloc solo crece, la resta nos da exactamente
+		// lo que reservó fetchDigitalTwinState, haya actuado el GC natural o no.
+		allocatedMemMB := float64(memAfter.TotalAlloc-memBefore.TotalAlloc) / 1024.0 / 1024.0
+
+		// Verificación de integridad de datos
 		correctCount := countCorrectNodes(expectedValues, graph)
 		successRate := 100.0
 		if len(expectedValues) > 0 {
@@ -145,10 +162,11 @@ func performBenchmarkSeries(writer *csv.Writer, arch string, count int, expected
 			IoWaitTime:   ioTime,
 			CpuTime:      cpuTime,
 			SuccessRate:  successRate,
+			MemAllocMB:   allocatedMemMB,
 		}
 
-		fmt.Printf("     Run %d: Latency=%.2fms | I/O=%.2fms | Overhead=%.2fms | Success=%.2f%%\n",
-			r, metrics.TotalLatency, metrics.IoWaitTime, metrics.CpuTime, metrics.SuccessRate)
+		fmt.Printf("     Run %d: Latency=%.2fms | I/O=%.2fms | Overhead=%.2fms | Success=%.2f%% | MemAlloc=%.2fMB\n",
+			r, metrics.TotalLatency, metrics.IoWaitTime, metrics.CpuTime, metrics.SuccessRate, metrics.MemAllocMB)
 
 		logResult(writer, count, arch, metrics)
 	}
@@ -225,15 +243,22 @@ func resolveTopology() ([]Thing, error) {
 	return decode.Things, nil
 }
 
+type stateRecord struct {
+	ID  int
+	Val string
+}
+
 // implements the lazy evaluation strategy
 // It performs parallel batch retrieval and Semantic Hydration
 func enrichFederatedStateMetrics(topology []Thing) ([]Thing, float64) {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	var maxIOTime float64 // Tracks the bottleneck batch
 
-	// Graph Indexing
-	// Simulates loading the KG topology into an efficient memory structure for hydration
+	// Variables para medir la "ventana global" de I/O
+	var firstIO time.Time
+	var lastIO time.Time
+	var isFirst = true
+
 	nodeIndex := make(map[int]*Thing, len(topology))
 	ids := make([]int32, len(topology))
 	for i := range topology {
@@ -241,7 +266,6 @@ func enrichFederatedStateMetrics(topology []Thing) ([]Thing, float64) {
 		ids[i] = int32(topology[i].ExternalID)
 	}
 
-	// Parallel Batch
 	for i := 0; i < len(ids); i += BatchSize {
 		end := i + BatchSize
 		if end > len(ids) {
@@ -254,58 +278,82 @@ func enrichFederatedStateMetrics(topology []Thing) ([]Thing, float64) {
 		go func(batch []int32) {
 			defer wg.Done()
 
+			// 1. Marca de inicio I/O
 			tStartDB := time.Now()
+
+			// 2. Fetch usando Slices en lugar de Mapas
 			batchResults, err := fetchISUBatch(batch)
-			durDB := time.Since(tStartDB).Seconds() * 1000
+
+			// 3. Marca de fin I/O
+			tEndDB := time.Now()
 
 			if err != nil {
 				log.Printf("ISU Batch Retrieval Error: %v", err)
 				return
 			}
 
+			// 4. Actualizamos la ventana de tiempo global (protegido por mutex)
 			mu.Lock()
-			if durDB > maxIOTime {
-				maxIOTime = durDB
+			if isFirst || tStartDB.Before(firstIO) {
+				firstIO = tStartDB
+				isFirst = false
 			}
-
-			// Semantic Hydration
-			// Injection of operational state into the semantic graph nodes
-			for id, val := range batchResults {
-				if node, exists := nodeIndex[id]; exists {
-					node.Value = val
-				}
+			if tEndDB.After(lastIO) {
+				lastIO = tEndDB
 			}
 			mu.Unlock()
+
+			// 5. Hidratación Lock-Free sobre el array contiguo
+			for _, rec := range batchResults {
+				if node, exists := nodeIndex[rec.ID]; exists {
+					node.Value = rec.Val // Escritura segura por diseño de chunks
+				}
+			}
 		}(chunkIDs)
 	}
 
 	wg.Wait()
-	return topology, maxIOTime
+
+	// El tiempo real bloqueado por red/DB desde el inicio de la 1ª gorutina
+	// hasta el final de la última.
+	trueIOWallClock := float64(0)
+	if !isFirst {
+		trueIOWallClock = lastIO.Sub(firstIO).Seconds() * 1000
+	}
+
+	return topology, trueIOWallClock
 }
 
 // Executes the last known value query on the TSDB
 // This simulates the semantic wrapper abstraction layer
-func fetchISUBatch(ids []int32) (map[int]string, error) {
+func fetchISUBatch(ids []int32) ([]stateRecord, error) {
 	query := `
-		SELECT DISTINCT ON (sensor_id) sensor_id, payload
-		FROM query_test
-		WHERE sensor_id = ANY($1)
-		ORDER BY sensor_id, time DESC
-	`
+        SELECT DISTINCT ON (sensor_id) sensor_id, payload
+        FROM query_test
+        WHERE sensor_id = ANY($1)
+        ORDER BY sensor_id, time DESC
+    `
 	rows, err := pgDB.Query(query, pq.Array(ids))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	localResults := make(map[int]string)
+	// Pre-reservar memoria exacta: len(ids)
+	// Esto evita que Go tenga que redimensionar la memoria dinámicamente.
+	localResults := make([]stateRecord, 0, len(ids))
+
 	for rows.Next() {
-		var id int
-		var val string
-		if err := rows.Scan(&id, &val); err == nil {
-			localResults[id] = val
+		var rec stateRecord
+		if err := rows.Scan(&rec.ID, &rec.Val); err == nil {
+			localResults = append(localResults, rec)
 		}
 	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return localResults, nil
 }
 
@@ -361,6 +409,7 @@ func initCSVWriter() *csv.Writer {
 		"IO_Wait_ms",
 		"Orchestration_Overhead_ms",
 		"Success_Rate_Pct",
+		"Memory_Pressure_MB_per_Query",
 	})
 	writer.Flush()
 	return writer
@@ -375,6 +424,7 @@ func logResult(w *csv.Writer, count int, arch string, m QueryMetrics) {
 		fmt.Sprintf("%.4f", m.IoWaitTime),
 		fmt.Sprintf("%.4f", m.CpuTime),
 		fmt.Sprintf("%.2f", m.SuccessRate),
+		fmt.Sprintf("%.4f", m.MemAllocMB),
 	})
 	w.Flush()
 }

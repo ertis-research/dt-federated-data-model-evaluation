@@ -1,8 +1,19 @@
 replicaCount: 3
 
+nodeSelector:
+  kubernetes.io/hostname: fog4
+
 service:
   type: LoadBalancer
   mqtt: 1883
 
 persistence:
   enabled: true
+
+resources:
+  requests:
+    cpu: "4"
+    memory: "8Gi"
+  limits:
+    cpu: "4"
+    memory: "8Gi"

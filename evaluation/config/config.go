@@ -25,6 +25,9 @@ type Env struct {
 		User string
 		Pass string
 	}
+
+	PrometheusURI       string
+	KubernetesNamespace string
 }
 
 func LoadEnv() Env {
@@ -46,6 +49,9 @@ func LoadEnv() Env {
 	e.Timescale.Name = mustEnv("TS_NAME")
 	e.Timescale.User = mustEnv("TS_USER")
 	e.Timescale.Pass = mustEnv("TS_PASS")
+
+	e.PrometheusURI = mustEnv("PROMETHEUS_URL")
+	e.KubernetesNamespace = mustEnv("KUBERNETES_NAMESPACE")
 
 	return e
 }

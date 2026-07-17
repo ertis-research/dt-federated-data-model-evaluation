@@ -26,6 +26,8 @@ spec:
       labels:
         app: timescaledb
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: fog6
       containers:
         - name: timescaledb
           image: 'timescale/timescaledb:latest-pg17'
@@ -38,15 +40,28 @@ spec:
               value: postgres
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests:
+              cpu: "4"
+              memory: "16Gi"
+            limits:
+              cpu: "4"
+              memory: "16Gi"
           ports:
             - containerPort: 5432
           volumeMounts:
             - mountPath: /var/lib/postgresql/data
               name: timescale-storage
+            - mountPath: /dev/shm
+              name: dshm
       volumes:
         - name: timescale-storage
           persistentVolumeClaim:
             claimName: timescale-pvc
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
 
 ---
 
@@ -61,5 +76,5 @@ spec:
     - protocol: TCP
       port: 5432
       targetPort: 5432
-      nodePort: 47523
+      nodePort: 45523
   type: NodePort

@@ -5,139 +5,97 @@ import numpy as np
 # ============================================================
 # Load evaluation data
 # ============================================================
-df = pd.read_csv("../evaluation/output/ingestion_evaluation_results.csv")
+df = pd.read_csv("../evaluation/output/ingestion_evaluation_results2_NUEVO.csv")
+
+df["Scenario_Label"] = (
+    df["Num_Sensors"].astype(str) + "@" + df["Freq_Hz"].astype(str) + " Hz"
+)
 
 # ============================================================
-# Compute mean metrics across runs for each scenario
+# Aggregate results
 # ============================================================
-df_mean = (
-    df.groupby(
-        ["Step_ID", "Num_Sensors", "Freq_Hz", "Architecture"],
-        as_index=False
+df_stats = (
+    df.groupby(["Step_ID", "Scenario_Label", "Architecture"], as_index=False)
+    .agg(
+        Latency_Mean=("Avg_Latency_ms", "mean"),
+        Latency_Std=("Avg_Latency_ms", "std"),
+        PacketLoss_Mean=("Packet_Loss_Network", "mean"),
+        PacketLoss_Std=("Packet_Loss_Network", "std"),
+        Throughput_Mean=("Throughput_msg_sec", "mean"),
+        Throughput_Std=("Throughput_msg_sec", "std"),
+        CPU_Mean=("DB_CPU_Avg_Cores", "mean"),
+        CPU_Std=("DB_CPU_Avg_Cores", "std"),
+        RAM_Mean=("DB_RAM_Max_MB", "mean"),
+        RAM_Std=("DB_RAM_Max_MB", "std")
     )
-    .mean(numeric_only=True)
-)
+).sort_values("Step_ID")
 
-# ============================================================
-# <devices>@<frequency> Hz
-# ============================================================
-df_mean["Scenario_Label"] = (
-    df_mean["Num_Sensors"].astype(str)
-    + "@"
-    + df_mean["Freq_Hz"].astype(str)
-    + " Hz"
-)
-
-# Ensure consistent ordering of the six scenarios
-scenario_order = (
-    df_mean[["Step_ID", "Scenario_Label"]]
-    .drop_duplicates()
-    .sort_values("Step_ID")
-)
-
-labels = scenario_order["Scenario_Label"].tolist()
-x = np.arange(len(labels))
-width = 0.35
-
-# Split architectures
-fed = df_mean[df_mean["Architecture"] == "Federated"]
-cen = df_mean[df_mean["Architecture"] == "Centralized"]
+fed = df_stats[df_stats["Architecture"] == "Federated"].reset_index(drop=True)
+cen = df_stats[df_stats["Architecture"] == "Centralized"].reset_index(drop=True)
 
 # ============================================================
 # IEEE-compliant plotting style
 # ============================================================
 plt.rcParams.update({
     "font.family": "serif",
-    "font.serif": ["Times New Roman"],
     "font.size": 10,
     "axes.grid": True,
     "grid.linestyle": "--",
     "grid.alpha": 0.6,
+    "axes.grid.axis": "y" # Solo líneas horizontales para gráficos de barras
 })
 
-# ============================================================
-# FIGURE 1: Average Latency
-# ============================================================
-plt.figure(figsize=(3.6, 3.2))
+# Configuración de los ejes X para las barras agrupadas
+labels = fed["Scenario_Label"].tolist()
+x = np.arange(len(labels))  # Posiciones en el eje X
+width = 0.35                # Ancho de las barras
 
-plt.bar(
-    x - width / 2,
-    fed["Avg_Latency_ms"],
-    width,
-    label="Federated",
-)
-plt.bar(
-    x + width / 2,
-    cen["Avg_Latency_ms"],
-    width,
-    label="Centralized",
-)
-
-plt.xlabel("Scenario (Devices@Frequency)")
-plt.ylabel("Average Latency (ms)")
-plt.xticks(x, labels, rotation=30, ha="right")
-plt.legend()
-
-plt.tight_layout()
-plt.savefig(
-    "output/ingestion_average_latency.pdf",
-    bbox_inches="tight"
-)
-
-# ============================================================
-# FIGURE 2: Throughput
-# ============================================================
-plt.figure(figsize=(3.6, 3.2))
-
-plt.bar(
-    x - width / 2,
-    fed["Throughput_msg_sec"],
-    width,
-    label="Federated",
-)
-plt.bar(
-    x + width / 2,
-    cen["Throughput_msg_sec"],
-    width,
-    label="Centralized",
-)
-
-plt.xlabel("Scenario (Devices@Frequency)")
-plt.ylabel("Throughput (messages/s)")
-plt.xticks(x, labels, rotation=30, ha="right")
-plt.legend()
-
-plt.tight_layout()
-plt.savefig(
-    "output/ingestion_throughput.pdf",
-    bbox_inches="tight"
-)
+# Función auxiliar para evitar repetir código
+def plot_bar_chart(y_mean_fed, y_std_fed, y_mean_cen, y_std_cen, ylabel, filename):
+    fig, ax = plt.subplots(figsize=(4.0, 3.2)) # Un poco más ancho para las barras
+    
+    # Barras para Federated
+    ax.bar(x - width/2, y_mean_fed, width, yerr=y_std_fed, 
+           label='Federated', capsize=3, edgecolor='black', hatch='//', alpha=0.8)
+    
+    # Barras para Centralized
+    ax.bar(x + width/2, y_mean_cen, width, yerr=y_std_cen, 
+           label='Centralized', capsize=3, edgecolor='black', hatch='\\\\', alpha=0.8)
+    
+    ax.set_xlabel("Scenario (Devices@Frequency)")
+    ax.set_ylabel(ylabel)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=30, ha="right")
+    ax.legend(
+        framealpha=0.7,        # Transparencia (0 = transparente, 1 = opaco)
+        edgecolor="black",     # Borde negro para que se vea bien en el paper
+        fontsize=9             # Un poco más pequeña para no tapar tanto
+    )
+    fig.tight_layout()
+    fig.savefig(f"output/{filename}.pdf", bbox_inches="tight")
+    plt.close(fig) # Cierra la figura para liberar memoria
 
 # ============================================================
-# FIGURE 3: Packet Loss
+# Generar los 5 gráficos
 # ============================================================
-plt.figure(figsize=(3.6, 3.2))
+plot_bar_chart(fed["Latency_Mean"], fed["Latency_Std"], 
+               cen["Latency_Mean"], cen["Latency_Std"], 
+               "Average Latency (ms)", "ingestion_average_latency")
 
-plt.bar(
-    x - width / 2,
-    fed["Packet_Loss_Network"],
-    width,
-    label="Federated",
-)
-plt.bar(
-    x + width / 2,
-    cen["Packet_Loss_Network"],
-    width,
-    label="Centralized",
-)
+plot_bar_chart(fed["PacketLoss_Mean"], fed["PacketLoss_Std"], 
+               cen["PacketLoss_Mean"], cen["PacketLoss_Std"], 
+               "Packet Loss (messages)", "ingestion_packet_loss")
 
-plt.xlabel("Scenario (Devices@Frequency)")
-plt.ylabel("Packet Loss (messages)")
-plt.xticks(x, labels, rotation=30, ha="right")
-plt.legend()
+plot_bar_chart(fed["Throughput_Mean"], fed["Throughput_Std"], 
+               cen["Throughput_Mean"], cen["Throughput_Std"], 
+               "Throughput (msg/sec)", "ingestion_throughput")
 
-plt.tight_layout()
-plt.savefig(
-    "output/ingestion_packet_loss.pdf",
-    bbox_inches="tight"
-)
+plot_bar_chart(fed["CPU_Mean"], fed["CPU_Std"], 
+               cen["CPU_Mean"], cen["CPU_Std"], 
+               "CPU Usage (Cores)", "ingestion_cpu")
+
+plot_bar_chart(fed["RAM_Mean"], fed["RAM_Std"], 
+               cen["RAM_Mean"], cen["RAM_Std"], 
+               "Memory Usage (MB)", "ingestion_ram")
+
+print("All 5 bar plots generated successfully.")
