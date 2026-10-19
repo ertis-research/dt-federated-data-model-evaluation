@@ -67,21 +67,72 @@ type Thing struct {
 	MaxThreshold   float64       `json:"max_threshold,omitempty"`
 	IsuID          int           `json:"isu_id,omitempty"`         // Data Anchor: Target ISU index
 	ExternalID     int           `json:"external_id,omitempty"`    // Data Anchor: Local TSDB identifier
-	Value          float64       `json:"value,omitempty"`          // Dynamic telemetry state (hydrated on-the-fly)
+	Value          float64       `json:"value,omitempty"`          // Dynamic telemetry state
 	HasObservation []Observation `json:"hasObservation,omitempty"` // Time-series observations in Centralized KG
-	Status         string        `json:"status,omitempty"`         // Synthesized/inferred semantic state
 	HasChild       []Thing       `json:"hasChild,omitempty"`       // Topological hierarchical relationships
 }
 
-// EphemeralGraph holds the hydrated in-memory graph and inferred triples during Stage 3 & 4
-type EphemeralGraph struct {
-	Roots            []Thing           // Hierarchical tree of Things
-	SensorIndex      map[int]*Thing    // Pointers to articulated leaf Thing nodes inside the tree
-	ParentComponent  map[int]*Thing    // Sensor ExternalID -> Parent Component Thing
-	ParentTurbine    map[int]*Thing    // Sensor ExternalID -> Grandparent Turbine Thing
-	FaultyComponents map[string]string // Component Name -> Inferred Fault Type
-	TurbineAlerts    map[string]int    // Turbine Name -> Count of Critical Subsystem Faults
-	MatchedCount     int
+// ======================================================================================
+// EPHEMERAL IN-MEMORY RDF TRIPLE STORE & EMBEDDED INFERENCE / BGP ENGINE (STAGE 3 & 4)
+// ======================================================================================
+
+// RDFTriple represents a canonical semantic triple (Subject, Predicate, Object)
+type RDFTriple struct {
+	Subject   string
+	Predicate string
+	Object    string
+	NumValue  float64 // Optional parsed numeric literal for fast range filter evaluation
+}
+
+// EphemeralTripleGraph implements an in-memory RDF graph with SPO, POS, and OSP indexes
+// to support Stage 3 (Semantic Hydration) and Stage 4 (SPARQL-like BGP & Rule Inference).
+type EphemeralTripleGraph struct {
+	Triples    []RDFTriple
+	SPO        map[string]map[string][]string  // Subject -> Predicate -> []Object
+	POS        map[string]map[string][]string  // Predicate -> Object -> []Subject
+	OSP        map[string]map[string][]string  // Object -> Subject -> []Predicate (inverse traversal)
+	NumericLit map[string]map[string]float64   // Subject -> Predicate -> float64 literal
+	SensorURIs map[int]string                  // ExternalID -> Sensor URI (e.g., "dt:Sensor_1")
+	Matched    int                             // Count of query bindings matched in Stage 4
+}
+
+func NewEphemeralTripleGraph(estimatedSensors int) *EphemeralTripleGraph {
+	capHint := estimatedSensors * 6
+	return &EphemeralTripleGraph{
+		Triples:    make([]RDFTriple, 0, capHint),
+		SPO:        make(map[string]map[string][]string, estimatedSensors*2),
+		POS:        make(map[string]map[string][]string, 16),
+		OSP:        make(map[string]map[string][]string, estimatedSensors*2),
+		NumericLit: make(map[string]map[string]float64, estimatedSensors),
+		SensorURIs: make(map[int]string, estimatedSensors),
+	}
+}
+
+// InsertTriple synthesizes and indexes a semantic triple (s, p, o) into the ephemeral graph
+func (g *EphemeralTripleGraph) InsertTriple(s, p, o string, numVal float64, isNumeric bool) {
+	g.Triples = append(g.Triples, RDFTriple{Subject: s, Predicate: p, Object: o, NumValue: numVal})
+
+	if _, ok := g.SPO[s]; !ok {
+		g.SPO[s] = make(map[string][]string, 4)
+	}
+	g.SPO[s][p] = append(g.SPO[s][p], o)
+
+	if _, ok := g.POS[p]; !ok {
+		g.POS[p] = make(map[string][]string, 8)
+	}
+	g.POS[p][o] = append(g.POS[p][o], s)
+
+	if _, ok := g.OSP[o]; !ok {
+		g.OSP[o] = make(map[string][]string, 2)
+	}
+	g.OSP[o][s] = append(g.OSP[o][s], p)
+
+	if isNumeric {
+		if _, ok := g.NumericLit[s]; !ok {
+			g.NumericLit[s] = make(map[string]float64, 2)
+		}
+		g.NumericLit[s][p] = numVal
+	}
 }
 
 type ExpectedSensor struct {
@@ -107,15 +158,17 @@ type QueryMetrics struct {
 	TotalLatency   float64 // End-to-end execution time (ms): Stage 1 + 2 + 3 + 4
 	Stage1AnchorMs float64 // Stage 1: Topological Traversal & Data Anchor Resolution in KG (ms)
 	Stage2ISUIOMs  float64 // Stage 2: Parallel State Retrieval from ISUs (ms)
-	Stage3HydrMs   float64 // Stage 3: Semantic Hydration in ephemeral graph (ms)
-	Stage4QueryMs  float64 // Stage 4: End-to-End Semantic Query / Inference Execution (ms)
+	Stage3HydrMs   float64 // Stage 3: Semantic Hydration & Triple Synthesis in ephemeral graph (ms)
+	Stage4QueryMs  float64 // Stage 4: Embedded Inference & BGP Query Execution (ms)
 	SuccessRate    float64 // Data Integrity percentage (0-100%)
 	MemAllocMB     float64 // RAM allocated per query (MB)
 }
 
-type stateRecord struct {
-	ID  int
-	Val float64
+// Raw JSON payload returned by an ISU Semantic Wrapper during Stage 2
+type wrapperRecord struct {
+	ID      int     `json:"asset_id"`
+	Reading float64 `json:"reading"`
+	Unit    string  `json:"unit"`
 }
 
 // ======================================================================================
@@ -321,9 +374,9 @@ func executeSingleQuery(arch string, numISUs int, queryType string, expected map
 	return executeFederatedQuery(numISUs, queryType, expected)
 }
 
-// executeCentralizedQuery traverses the multi-hop hasChild relationships in the monolithic KG
-// and resolves the Last Known Value (LKV) via `hasObservation(orderdesc: timestamp, first: 1)`,
-// which is the exact graph equivalent of `SELECT DISTINCT ON (sensor_id) ... ORDER BY time DESC`.
+// executeCentralizedQuery traverses the multi-hop hasChild relationships in the monolithic KG,
+// resolves the Last Known Value (LKV) via `hasObservation(orderdesc: timestamp, first: 1)`,
+// and executes the same Stage 4 semantic evaluation over the resulting triples.
 func executeCentralizedQuery(queryType string, expected map[int]ExpectedSensor) (s1, s2, s3, s4, integrity float64) {
 	ctx := context.Background()
 	t0 := time.Now()
@@ -331,7 +384,6 @@ func executeCentralizedQuery(queryType string, expected map[int]ExpectedSensor) 
 	var q string
 	switch queryType {
 	case "Q1_Selective":
-		// Multi-hop path traversal starting from topological Zone_0 Thing down to Sensor Things via hasChild
 		q = `{
 			roots(func: eq(name, "Zone_0")) {
 				uid
@@ -362,7 +414,6 @@ func executeCentralizedQuery(queryType string, expected map[int]ExpectedSensor) 
 			}
 		}`
 	case "Q2_Filtering":
-		// Traverse from Gearbox Component Things through hasChild to Sensor Things and get LKV
 		q = `{
 			roots(func: eq(sub_type, "Gearbox")) {
 				uid
@@ -383,7 +434,6 @@ func executeCentralizedQuery(queryType string, expected map[int]ExpectedSensor) 
 			}
 		}`
 	case "Q3_Inference":
-		// Full multi-hop hierarchy traversal from WindFarm root Thing down to Sensor Things with LKV
 		q = `{
 			roots(func: eq(asset_category, "WindFarm")) {
 				uid
@@ -432,29 +482,31 @@ func executeCentralizedQuery(queryType string, expected map[int]ExpectedSensor) 
 	json.Unmarshal(resp.Json, &decode)
 	s1 = sinceMs(t0)
 
-	// Stage 4: Build index & run semantic query / fault propagation over the retrieved hierarchy
+	// Stage 4: Index triples & run embedded BGP / inference engine over the retrieved hierarchy
 	t4 := time.Now()
-	eph := indexHierarchy(decode.Roots)
-	runStage4Execution(queryType, &eph)
+	triples := extractTopologicalTriples(decode.Roots, len(expected), nil)
+	matched := runStage4SemanticEngine(queryType, triples, len(expected))
 	s4 = sinceMs(t4)
 
-	integrity = verifyIntegrity(queryType, eph, expected)
+	integrity = verifyIntegrity(queryType, matched, expected)
 	return s1, 0, 0, s4, integrity
 }
 
-// executeFederatedQuery implements the 4-Stage Orchestration Sequence over multi-hop Thing hierarchies
+// executeFederatedQuery implements the 4-Stage Orchestration Sequence described in Section 4:
+//   Stage 1: Data Anchor Resolution (KG topological traversal)
+//   Stage 2: Parallel State Retrieval from ISUs via Canonical JSON Semantic Wrappers
+//   Stage 3: Semantic Hydration (JSON structural flattening & RDF triple synthesis into Ephemeral Graph)
+//   Stage 4: Query & Inference Execution (Triple indexing, SPARQL-like BGP matching & Forward-Chaining rules)
 func executeFederatedQuery(numISUs int, queryType string, expected map[int]ExpectedSensor) (s1, s2, s3, s4, integrity float64) {
 	ctx := context.Background()
 
 	// ----------------------------------------------------------------------------------
 	// STAGE 1: Topological Traversal & Data Anchor Resolution (Semantic Plane)
-	// Traverses white topological Thing nodes via hasChild to discover black IoT Thing nodes
 	// ----------------------------------------------------------------------------------
 	t0 := time.Now()
 	var q string
 	switch queryType {
 	case "Q1_Selective":
-		// Selective subgraph resolution starting at Zone_0 Thing and following hasChild edges
 		q = `{
 			roots(func: eq(name, "Zone_0")) {
 				uid
@@ -483,7 +535,6 @@ func executeFederatedQuery(numISUs int, queryType string, expected map[int]Expec
 			}
 		}`
 	case "Q2_Filtering":
-		// Symmetric topological resolution for Gearbox Component Things and their child Sensor Things
 		q = `{
 			roots(func: eq(sub_type, "Gearbox")) {
 				uid
@@ -502,7 +553,6 @@ func executeFederatedQuery(numISUs int, queryType string, expected map[int]Expec
 			}
 		}`
 	default:
-		// Full Digital Twin hierarchy traversal: WindFarm -> Zone -> Turbine -> Component -> Sensor
 		q = `{
 			roots(func: eq(asset_category, "WindFarm")) {
 				uid
@@ -548,27 +598,23 @@ func executeFederatedQuery(numISUs int, queryType string, expected map[int]Expec
 	}
 	json.Unmarshal(resp.Json, &decode)
 
-	// Index the topological tree and extract Data Anchors from articulated Sensor nodes
-	eph := indexHierarchy(decode.Roots)
-	isuBatches := make(map[int][]int32, numISUs)
-	for extID, sensorPtr := range eph.SensorIndex {
-		isuBatches[sensorPtr.IsuID] = append(isuBatches[sensorPtr.IsuID], int32(extID))
-	}
+	// Extract Data Anchors grouped by ISU
+	isuBatches := extractDataAnchors(decode.Roots, numISUs)
 	s1 = sinceMs(t0)
 
 	// ----------------------------------------------------------------------------------
 	// STAGE 2: Parallel Batch State Retrieval across Independent Storage Units (Data Plane)
+	// Semantic Wrappers return consolidated canonical JSON payloads per ISU batch
 	// ----------------------------------------------------------------------------------
 	t1 := time.Now()
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	var resultsChunks [][]stateRecord
+	var wrapperPayloads [][]byte
 
 	for isuID, anchorIDs := range isuBatches {
 		if len(anchorIDs) == 0 {
 			continue
 		}
-		// Sub-batch parallel retrieval per ISU to avoid single-query array bottleneck
 		for start := 0; start < len(anchorIDs); start += ISUSubBatch {
 			end := start + ISUSubBatch
 			if end > len(anchorIDs) {
@@ -578,13 +624,13 @@ func executeFederatedQuery(numISUs int, queryType string, expected map[int]Expec
 			wg.Add(1)
 			go func(targetISU int, ids []int32) {
 				defer wg.Done()
-				recs, err := fetchISUBatch(pgDBs[targetISU], ids)
+				jsonBatch, err := fetchISUWrapperJSON(pgDBs[targetISU], ids)
 				if err != nil {
 					log.Printf("Stage 2 ISU %d Retrieval Error: %v", targetISU, err)
 					return
 				}
 				mu.Lock()
-				resultsChunks = append(resultsChunks, recs)
+				wrapperPayloads = append(wrapperPayloads, jsonBatch)
 				mu.Unlock()
 			}(isuID, chunk)
 		}
@@ -593,122 +639,172 @@ func executeFederatedQuery(numISUs int, queryType string, expected map[int]Expec
 	s2 = sinceMs(t1)
 
 	// ----------------------------------------------------------------------------------
-	// STAGE 3: Semantic Hydration (In-Memory Ephemeral Graph Enrichment)
-	// Injects dynamic state triples directly into the articulated Thing nodes in memory
+	// STAGE 3: Semantic Hydration (JSON Flattening & Ephemeral RDF Triple Synthesis)
+	// Flattens the received canonical JSON objects, synthesizes dynamic state predicates,
+	// and merges them with the topological triples into the unified ephemeral triple set.
 	// ----------------------------------------------------------------------------------
 	t2 := time.Now()
-	for _, recs := range resultsChunks {
-		for _, rec := range recs {
-			if sensorNode, exists := eph.SensorIndex[rec.ID]; exists {
-				sensorNode.Value = rec.Val
-				sensorNode.Status = "Hydrated"
-			}
+	hydratedState := make(map[int]float64, len(expected))
+	for _, rawJSON := range wrapperPayloads {
+		var records []wrapperRecord
+		if err := json.Unmarshal(rawJSON, &records); err != nil {
+			continue
+		}
+		for _, rec := range records {
+			hydratedState[rec.ID] = rec.Reading
 		}
 	}
+	triples := extractTopologicalTriples(decode.Roots, len(expected), hydratedState)
 	s3 = sinceMs(t2)
 
 	// ----------------------------------------------------------------------------------
-	// STAGE 4: Semantic Query & Inference Execution over Hydrated Ephemeral Graph
+	// STAGE 4: Semantic Query & Inference Execution over Enriched Ephemeral Triple Graph
+	// Indexes the unified RDF triples into SPO/POS/OSP tables and executes SPARQL-like
+	// BGP pattern matching, numeric filtering, and Forward-Chaining inference rules.
 	// ----------------------------------------------------------------------------------
 	t3 := time.Now()
-	runStage4Execution(queryType, &eph)
+	matched := runStage4SemanticEngine(queryType, triples, len(expected))
 	s4 = sinceMs(t3)
 
-	integrity = verifyIntegrity(queryType, eph, expected)
+	integrity = verifyIntegrity(queryType, matched, expected)
 	return s1, s2, s3, s4, integrity
 }
 
-// indexHierarchy recursively walks the `hasChild` tree of Thing nodes, indexing articulated
-// leaf Sensor Things (which hold Data Anchors) and linking their parent Component and Turbine Things.
-func indexHierarchy(roots []Thing) EphemeralGraph {
-	eph := EphemeralGraph{
-		Roots:            roots,
-		SensorIndex:      make(map[int]*Thing, 1024),
-		ParentComponent:  make(map[int]*Thing, 1024),
-		ParentTurbine:    make(map[int]*Thing, 1024),
-		FaultyComponents: make(map[string]string),
-		TurbineAlerts:    make(map[string]int),
-	}
-
-	var walk func(node *Thing, curTurbine *Thing, curComponent *Thing)
-	walk = func(node *Thing, curTurbine *Thing, curComponent *Thing) {
-		switch node.AssetCategory {
-		case "Turbine":
-			curTurbine = node
-		case "Component":
-			curComponent = node
-		case "Sensor":
-			if node.ExternalID > 0 {
-				// If populated via Centralized hasObservation LKV query, extract latest observation value
-				if len(node.HasObservation) > 0 {
-					node.Value = node.HasObservation[0].Value
-				}
-				eph.SensorIndex[node.ExternalID] = node
-				if curComponent != nil {
-					eph.ParentComponent[node.ExternalID] = curComponent
-				}
-				if curTurbine != nil {
-					eph.ParentTurbine[node.ExternalID] = curTurbine
-				}
-			}
+// extractDataAnchors walks the topological response from Dgraph to group (isu_id, external_id) anchors
+func extractDataAnchors(roots []Thing, numISUs int) map[int][]int32 {
+	batches := make(map[int][]int32, numISUs)
+	var walk func(n *Thing)
+	walk = func(n *Thing) {
+		if n.AssetCategory == "Sensor" && n.ExternalID > 0 {
+			batches[n.IsuID] = append(batches[n.IsuID], int32(n.ExternalID))
 		}
-		for i := range node.HasChild {
-			walk(&node.HasChild[i], curTurbine, curComponent)
+		for i := range n.HasChild {
+			walk(&n.HasChild[i])
 		}
 	}
-
-	for i := range eph.Roots {
-		walk(&eph.Roots[i], nil, nil)
+	for i := range roots {
+		walk(&roots[i])
 	}
-	return eph
+	return batches
 }
 
-// runStage4Execution executes path-based filtering or upward fault-propagation reasoning over the Thing tree
-func runStage4Execution(queryType string, eph *EphemeralGraph) {
+// extractTopologicalTriples synthesizes canonical RDF triples from the KG hierarchy and merges
+// either hydrated state values (Federated Stage 3) or Dgraph observations (Centralized).
+func extractTopologicalTriples(roots []Thing, estSensors int, hydratedState map[int]float64) []RDFTriple {
+	triples := make([]RDFTriple, 0, estSensors*5)
+
+	var walk func(n *Thing)
+	walk = func(n *Thing) {
+		uri := "dt:" + n.Name
+		triples = append(triples, RDFTriple{Subject: uri, Predicate: "rdf:type", Object: "dt:" + n.AssetCategory})
+		if n.SubType != "" {
+			triples = append(triples, RDFTriple{Subject: uri, Predicate: "dt:hasSubType", Object: "dt:" + n.SubType})
+		}
+		if n.AssetCategory == "Sensor" && n.ExternalID > 0 {
+			triples = append(triples, RDFTriple{Subject: uri, Predicate: "dt:maxThreshold", Object: "threshold", NumValue: n.MaxThreshold})
+			if hydratedState != nil {
+				if v, ok := hydratedState[n.ExternalID]; ok {
+					triples = append(triples, RDFTriple{Subject: uri, Predicate: "dt:hasDynamicValue", Object: "hydrated", NumValue: v})
+				}
+			} else if len(n.HasObservation) > 0 {
+				v := n.HasObservation[0].Value
+				triples = append(triples, RDFTriple{Subject: uri, Predicate: "dt:hasDynamicValue", Object: "centralized", NumValue: v})
+			}
+		}
+		for i := range n.HasChild {
+			childURI := "dt:" + n.HasChild[i].Name
+			triples = append(triples, RDFTriple{Subject: uri, Predicate: "dt:hasChild", Object: childURI})
+			walk(&n.HasChild[i])
+		}
+	}
+
+	for i := range roots {
+		walk(&roots[i])
+	}
+	return triples
+}
+
+// runStage4SemanticEngine loads the RDF triples into the embedded inference engine's SPO/POS/OSP
+// indexes and executes SPARQL-equivalent BGP joins, filters, and Forward-Chaining rules.
+func runStage4SemanticEngine(queryType string, triples []RDFTriple, estSensors int) int {
+	g := NewEphemeralTripleGraph(estSensors)
+	for i := range triples {
+		t := &triples[i]
+		isNum := t.Predicate == "dt:hasDynamicValue" || t.Predicate == "dt:maxThreshold"
+		g.InsertTriple(t.Subject, t.Predicate, t.Object, t.NumValue, isNum)
+	}
+
 	switch queryType {
 	case "Q1_Selective":
-		// Count all hydrated Sensor Things discovered under Zone_0's hasChild hierarchy
-		for _, s := range eph.SensorIndex {
-			if s.ExternalID > 0 {
-				eph.MatchedCount++
+		// BGP Query:
+		// SELECT ?sensor ?val WHERE {
+		//   dt:Zone_0 dt:hasChild ?turb .
+		//   ?turb     dt:hasChild ?comp .
+		//   ?comp     dt:hasChild ?sensor .
+		//   ?sensor   dt:hasDynamicValue ?val .
+		// }
+		turbs := g.SPO["dt:Zone_0"]["dt:hasChild"]
+		for _, turbURI := range turbs {
+			comps := g.SPO[turbURI]["dt:hasChild"]
+			for _, compURI := range comps {
+				sensors := g.SPO[compURI]["dt:hasChild"]
+				for _, sensorURI := range sensors {
+					if _, hasVal := g.NumericLit[sensorURI]["dt:hasDynamicValue"]; hasVal {
+						g.Matched++
+					}
+				}
 			}
 		}
 
 	case "Q2_Filtering":
-		// Multi-hop relational + state filtering:
-		// Select Sensor Things whose parent Component Thing is a "Gearbox" and dynamic Value > 75.0
-		for extID, s := range eph.SensorIndex {
-			comp := eph.ParentComponent[extID]
-			if comp != nil && comp.SubType == "Gearbox" && s.Value > 75.0 {
-				s.Status = "ThresholdExceeded"
-				eph.MatchedCount++
+		// BGP Query with Relational Join + Numeric Filter:
+		// SELECT ?comp ?sensor ?val WHERE {
+		//   ?comp   rdf:type dt:Component ;
+		//           dt:hasSubType dt:Gearbox ;
+		//           dt:hasChild ?sensor .
+		//   ?sensor dt:hasDynamicValue ?val .
+		//   FILTER (?val > 75.0)
+		// }
+		gearboxComps := g.POS["dt:hasSubType"]["dt:Gearbox"]
+		for _, compURI := range gearboxComps {
+			sensors := g.SPO[compURI]["dt:hasChild"]
+			for _, sensorURI := range sensors {
+				if val, ok := g.NumericLit[sensorURI]["dt:hasDynamicValue"]; ok && val > 75.0 {
+					g.InsertTriple(sensorURI, "rdf:type", "dt:ThresholdExceededSensor", 0, false)
+					g.Matched++
+				}
 			}
 		}
 
 	case "Q3_Inference":
-		// Upward Semantic Rule Reasoning across `hasChild` hierarchy:
-		// Rule: Thing(s, Sensor) ^ value(s) > max_threshold(s) ^ hasChild(comp, s) ^ hasChild(turb, comp)
-		//       => Status(comp) = "Faulty" ^ Status(turb) = "RequiresMaintenance"
-		for extID, s := range eph.SensorIndex {
-			if s.Value > s.MaxThreshold {
-				s.Status = "InferredAnomaly"
-				if comp := eph.ParentComponent[extID]; comp != nil {
-					comp.Status = "FaultyComponent"
-					eph.FaultyComponents[comp.Name] = "Critical_" + s.SubType
+		// Forward-Chaining Semantic Rule Reasoning & Fault Propagation:
+		// Rule R1 (Anomaly Detection):
+		//   (?s rdf:type dt:Sensor) ^ (?s dt:hasDynamicValue ?v) ^ (?s dt:maxThreshold ?th) ^ (?v > ?th)
+		//   => (?s rdf:type dt:AnomalousSensor)
+		// Rule R2 (Upward Component & Turbine Fault Propagation via inverse dt:hasChild):
+		//   (?s rdf:type dt:AnomalousSensor) ^ (?comp dt:hasChild ?s) ^ (?turb dt:hasChild ?comp)
+		//   => (?comp rdf:type dt:FaultyComponent) ^ (?turb rdf:type dt:MaintenanceRequiredTurbine)
+		sensors := g.POS["rdf:type"]["dt:Sensor"]
+		for _, sensorURI := range sensors {
+			val, hasVal := g.NumericLit[sensorURI]["dt:hasDynamicValue"]
+			th, hasTh := g.NumericLit[sensorURI]["dt:maxThreshold"]
+			if hasVal && hasTh && val > th {
+				g.InsertTriple(sensorURI, "rdf:type", "dt:AnomalousSensor", 0, false)
+				g.Matched++
+
+				for compURI := range g.OSP[sensorURI] {
+					g.InsertTriple(compURI, "rdf:type", "dt:FaultyComponent", 0, false)
+					for turbURI := range g.OSP[compURI] {
+						g.InsertTriple(turbURI, "rdf:type", "dt:MaintenanceRequiredTurbine", 0, false)
+					}
 				}
-				if turb := eph.ParentTurbine[extID]; turb != nil {
-					turb.Status = "RequiresMaintenance"
-					eph.TurbineAlerts[turb.Name]++
-				}
-				eph.MatchedCount++
-			} else {
-				s.Status = "Nominal"
 			}
 		}
 	}
+	return g.Matched
 }
 
-func verifyIntegrity(queryType string, eph EphemeralGraph, expected map[int]ExpectedSensor) float64 {
+func verifyIntegrity(queryType string, matchedCount int, expected map[int]ExpectedSensor) float64 {
 	if len(expected) == 0 {
 		return 100.0
 	}
@@ -732,13 +828,13 @@ func verifyIntegrity(queryType string, eph EphemeralGraph, expected map[int]Expe
 	}
 
 	if expectedMatches == 0 {
-		if eph.MatchedCount == 0 {
+		if matchedCount == 0 {
 			return 100.0
 		}
 		return 0.0
 	}
 
-	diff := eph.MatchedCount - expectedMatches
+	diff := matchedCount - expectedMatches
 	if diff < 0 {
 		diff = -diff
 	}
@@ -749,8 +845,9 @@ func verifyIntegrity(queryType string, eph EphemeralGraph, expected map[int]Expe
 	return acc
 }
 
-// Executes the Last Known Value (LKV) query on the specific ISU TSDB
-func fetchISUBatch(db *sql.DB, ids []int32) ([]stateRecord, error) {
+// fetchISUWrapperJSON executes the Last Known Value (LKV) query on the specific ISU TSDB
+// and serializes the result into the canonical JSON exchange schema of the Semantic Wrapper.
+func fetchISUWrapperJSON(db *sql.DB, ids []int32) ([]byte, error) {
 	query := `
         SELECT DISTINCT ON (sensor_id) sensor_id, payload
         FROM query_test
@@ -763,17 +860,18 @@ func fetchISUBatch(db *sql.DB, ids []int32) ([]stateRecord, error) {
 	}
 	defer rows.Close()
 
-	localResults := make([]stateRecord, 0, len(ids))
+	localResults := make([]wrapperRecord, 0, len(ids))
 	for rows.Next() {
-		var rec stateRecord
-		if err := rows.Scan(&rec.ID, &rec.Val); err == nil {
+		var rec wrapperRecord
+		rec.Unit = "degC_or_mm_s"
+		if err := rows.Scan(&rec.ID, &rec.Reading); err == nil {
 			localResults = append(localResults, rec)
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return localResults, nil
+	return json.Marshal(localResults)
 }
 
 // ======================================================================================
@@ -786,13 +884,11 @@ func assignTargetISU(sensorIdx int, totalSensors int, numISUs int, partMode stri
 	}
 	switch partMode {
 	case "ModerateSkew":
-		// 50% of sensors routed to ISU 0, remaining 50% distributed across ISUs 1..N-1
 		if sensorIdx <= totalSensors/2 {
 			return 0
 		}
 		return 1 + (sensorIdx % (numISUs - 1))
 	case "HotspotSkew":
-		// 80% of sensors concentrated in ISU 0 (extreme straggler hotspot)
 		if sensorIdx <= (totalSensors*80)/100 {
 			return 0
 		}
@@ -848,7 +944,6 @@ func setupEnvironment(count int, numISUs int, partMode string) map[int]ExpectedS
 	const turbinesPerZone = 10 // 50 turbines total
 	const compsPerTurbine = 4  // 200 components total
 
-	// Build sensors grouped by component index [0..199]
 	compSensors := make(map[int][]Thing, numZones*turbinesPerZone*compsPerTurbine)
 
 	for i := 1; i <= count; i++ {
@@ -862,7 +957,6 @@ func setupEnvironment(count int, numISUs int, partMode string) map[int]ExpectedS
 		compType := componentTypes[compLocalIdx]
 		sType := sensorTypes[i%len(sensorTypes)]
 
-		// Deterministic synthetic telemetry value in [20.0, 100.0]
 		val := 20.0 + float64((i*37)%800)/10.0
 		threshold := 80.0
 		isuID := assignTargetISU(i, count, numISUs, partMode)
@@ -891,7 +985,6 @@ func setupEnvironment(count int, numISUs int, partMode string) map[int]ExpectedS
 		}
 	}
 
-	// Construct the hierarchical tree of topological Thing nodes (WindFarm -> Zone -> Turbine -> Component -> Sensor)
 	zones := make([]Thing, 0, numZones)
 	for z := 0; z < numZones; z++ {
 		turbines := make([]Thing, 0, turbinesPerZone)
@@ -949,9 +1042,6 @@ func setupEnvironment(count int, numISUs int, partMode string) map[int]ExpectedS
 	return expected
 }
 
-// performUpdates injects a realistic time-series window (HistorySamples = 20 observations per sensor)
-// into either the Centralized KG (as timestamped Observation nodes) or the Federated TSDB ISUs.
-// Both systems must then resolve the exact same Last Known Value (LKV) query at runtime.
 func performUpdates(arch string, numISUs int, data map[int]ExpectedSensor) {
 	ctx := context.Background()
 	baseTime := time.Now().UTC().Add(-time.Duration(HistorySamples) * time.Second)
@@ -978,7 +1068,6 @@ func performUpdates(arch string, numISUs int, data map[int]ExpectedSensor) {
 						Value:     item.Value - 1.0,
 					}
 				}
-				// Latest observation at the most recent timestamp
 				obsList[HistorySamples-1] = Observation{
 					DType:     []string{"Observation"},
 					Timestamp: baseTime.Add(time.Duration(HistorySamples) * time.Second),
@@ -990,7 +1079,7 @@ func performUpdates(arch string, numISUs int, data map[int]ExpectedSensor) {
 				})
 			}
 		}
-		batchSize := 250
+		batchSize := 200
 		for i := 0; i < len(mutations); i += batchSize {
 			end := i + batchSize
 			if end > len(mutations) {
@@ -1000,7 +1089,6 @@ func performUpdates(arch string, numISUs int, data map[int]ExpectedSensor) {
 			dgClient.NewTxn().Mutate(ctx, &api.Mutation{SetJson: jsonBytes, CommitNow: true})
 		}
 	} else {
-		// Group updates by target ISU and bulk insert the exact same 20 timestamped observations per sensor
 		perISU := make(map[int][]ExpectedSensor, numISUs)
 		for _, item := range data {
 			perISU[item.IsuID] = append(perISU[item.IsuID], item)
@@ -1023,7 +1111,6 @@ func performUpdates(arch string, numISUs int, data map[int]ExpectedSensor) {
 					for h := 0; h < HistorySamples-1; h++ {
 						stmtIns.Exec(baseTime.Add(time.Duration(h)*time.Second), rec.ExternalID, rec.Value-1.0)
 					}
-					// Latest record at most recent timestamp
 					stmtIns.Exec(baseTime.Add(time.Duration(HistorySamples)*time.Second), rec.ExternalID, rec.Value)
 				}
 				if _, err := stmtIns.Exec(); err != nil {
@@ -1031,7 +1118,6 @@ func performUpdates(arch string, numISUs int, data map[int]ExpectedSensor) {
 				}
 				stmtIns.Close()
 				tx.Commit()
-				// Update PostgreSQL statistics so index scan on (sensor_id, time DESC) is always chosen
 				pgDBs[targetISU].Exec("ANALYZE query_test;")
 			}(isuID, items)
 		}
