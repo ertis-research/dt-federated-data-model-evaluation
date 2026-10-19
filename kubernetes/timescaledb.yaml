@@ -1,13 +1,15 @@
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: Service
 metadata:
-  name: timescale-pvc
+  name: timescaledb-headless
 spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
+  clusterIP: None
+  selector:
+    app: timescaledb
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
 
 ---
 
@@ -16,8 +18,9 @@ kind: StatefulSet
 metadata:
   name: timescaledb
 spec:
-  serviceName: timescaledb
-  replicas: 1
+  serviceName: timescaledb-headless
+  replicas: 8
+  podManagementPolicy: Parallel
   selector:
     matchLabels:
       app: timescaledb
@@ -26,8 +29,27 @@ spec:
       labels:
         app: timescaledb
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: fog6
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - edge1
+                      - edge2
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - timescaledb
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: timescaledb
           image: 'timescale/timescaledb:latest-pg17'
@@ -42,11 +64,11 @@ spec:
               value: /var/lib/postgresql/data/pgdata
           resources:
             requests:
-              cpu: "4"
-              memory: "16Gi"
+              cpu: "500m"
+              memory: "2Gi"
             limits:
-              cpu: "4"
-              memory: "16Gi"
+              cpu: "2"
+              memory: "4Gi"
           ports:
             - containerPort: 5432
           volumeMounts:
@@ -55,26 +77,144 @@ spec:
             - mountPath: /dev/shm
               name: dshm
       volumes:
-        - name: timescale-storage
-          persistentVolumeClaim:
-            claimName: timescale-pvc
         - name: dshm
           emptyDir:
             medium: Memory
-            sizeLimit: 4Gi
+            sizeLimit: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: timescale-storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
 
 ---
 
 apiVersion: v1
 kind: Service
 metadata:
-  name: timescaledb
+  name: timescaledb-isu-0
 spec:
   selector:
-    app: timescaledb
+    statefulset.kubernetes.io/pod-name: timescaledb-0
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+      nodePort: 45521
+  type: NodePort
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb-isu-1
+spec:
+  selector:
+    statefulset.kubernetes.io/pod-name: timescaledb-1
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+      nodePort: 45522
+  type: NodePort
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb-isu-2
+spec:
+  selector:
+    statefulset.kubernetes.io/pod-name: timescaledb-2
   ports:
     - protocol: TCP
       port: 5432
       targetPort: 5432
       nodePort: 45523
+  type: NodePort
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb-isu-3
+spec:
+  selector:
+    statefulset.kubernetes.io/pod-name: timescaledb-3
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+      nodePort: 45524
+  type: NodePort
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb-isu-4
+spec:
+  selector:
+    statefulset.kubernetes.io/pod-name: timescaledb-4
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+      nodePort: 45525
+  type: NodePort
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb-isu-5
+spec:
+  selector:
+    statefulset.kubernetes.io/pod-name: timescaledb-5
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+      nodePort: 45526
+  type: NodePort
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb-isu-6
+spec:
+  selector:
+    statefulset.kubernetes.io/pod-name: timescaledb-6
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+      nodePort: 45527
+  type: NodePort
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb-isu-7
+spec:
+  selector:
+    statefulset.kubernetes.io/pod-name: timescaledb-7
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+      nodePort: 45528
   type: NodePort

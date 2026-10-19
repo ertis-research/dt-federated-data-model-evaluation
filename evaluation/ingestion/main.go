@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,11 +35,15 @@ import (
 
 const (
 	TopicPrefix       = "dt/sensor/"
-	OutputCSV         = "output/ingestion_evaluation_results2.csv"
+	OutputCSV         = "output/ingestion_evaluation_results_v2.csv"
 	TotalRuns         = 5
 	TestDurationSec   = 120 // Test duration
-	WarmupDurationSec = 60  // Warm-up duration
+	WarmupDurationSec = 30  // Warm-up duration
 	QoSLevel          = 1   // At least once
+
+	// Batching parameters for Centralized_Batched baseline
+	BatchMaxSize  = 100
+	BatchMaxFlush = 100 * time.Millisecond
 )
 
 type PromResponse struct {
@@ -46,18 +52,18 @@ type PromResponse struct {
 		ResultType string `json:"resultType"`
 		Result     []struct {
 			Metric map[string]string `json:"metric"`
-			Value  []interface{}     `json:"value"` // Ej: [1678886400, "1.245"]
+			Value  []interface{}     `json:"value"`
 		} `json:"result"`
 	} `json:"data"`
 }
 
 // Global Infrastructure
 var (
-	cfg           config.Env
-	pgDB          *sql.DB
-	stmtTimescale *sql.Stmt
-	dgClient      *dgo.Dgraph
-	sensorUIDMap  map[int]string
+	cfg            config.Env
+	pgDBs          []*sql.DB
+	stmtsTimescale []*sql.Stmt
+	dgClient       *dgo.Dgraph
+	sensorUIDMap   map[int]string
 )
 
 // Structs
@@ -68,13 +74,23 @@ type Scenario struct {
 	GraphComplexity int
 }
 
+type ArchConfig struct {
+	Name    string
+	Mode    string // "Centralized_1to1", "Centralized_Batched", "Federated"
+	NumISUs int    // 0 for centralized, 1, 2, 4, 8 for federated
+}
+
 type Result struct {
 	StepID            int
 	NumSensors        int
 	Architecture      string
+	NumISUs           int
 	RunID             int
 	FrequencyHz       float64
 	AvgLatencyMs      float64
+	P50LatencyMs      float64
+	P95LatencyMs      float64
+	P99LatencyMs      float64
 	MessagesSent      int64
 	MessagesLost      int64
 	DbErrors          int64
@@ -90,6 +106,12 @@ type SensorNode struct {
 	Value string   `json:"value,omitempty"`
 }
 
+type batchedEvent struct {
+	sensorID int
+	payload  string
+	sentTime time.Time
+}
+
 // ======================================================================================
 // SECTION I: EXPERIMENT CONTROL
 // ======================================================================================
@@ -100,7 +122,7 @@ func main() {
 	cfg = config.LoadEnv()
 
 	initInfrastructure()
-	defer pgDB.Close()
+	defer closeInfrastructure()
 
 	writer := initCSVWriter()
 	defer writer.Flush()
@@ -111,20 +133,28 @@ func main() {
 		{StepID: 3, NumSensors: 1000, FrequencyHz: 0.1, GraphComplexity: 1000},
 		{StepID: 4, NumSensors: 2000, FrequencyHz: 0.2, GraphComplexity: 2000},
 		{StepID: 5, NumSensors: 5000, FrequencyHz: 0.2, GraphComplexity: 5000},
+		{StepID: 6, NumSensors: 5000, FrequencyHz: 1.0, GraphComplexity: 5000},
 	}
 
-	architectures := []string{"Federated", "Centralized"}
+	architectures := []ArchConfig{
+		{Name: "Centralized_1to1", Mode: "Centralized_1to1", NumISUs: 0},
+		{Name: "Centralized_Batched", Mode: "Centralized_Batched", NumISUs: 0},
+		{Name: "Federated_1ISU", Mode: "Federated", NumISUs: 1},
+		{Name: "Federated_2ISU", Mode: "Federated", NumISUs: 2},
+		{Name: "Federated_4ISU", Mode: "Federated", NumISUs: 4},
+		{Name: "Federated_8ISU", Mode: "Federated", NumISUs: 8},
+	}
 
-	fmt.Println("Starting INGESTION EVALUATION...")
-	fmt.Printf("QoS: %d | Duration: %d sec\n", QoSLevel, TestDurationSec)
+	fmt.Println("Starting MULTI-ISU & ABLATION INGESTION EVALUATION...")
+	fmt.Printf("QoS: %d | Duration: %d sec | Max Configured ISUs: %d\n", QoSLevel, TestDurationSec, len(pgDBs))
 
 	samplePayload := fmt.Sprintf("%d", time.Now().UnixNano())
 	fmt.Printf("Application Payload Size: %d bytes (Sample: %s)\n", len(samplePayload), samplePayload)
 
-	fmt.Println("\n>>> SYSTEM WARM-UP (60 seconds) <<<")
-	warmupSc := Scenario{StepID: 0, NumSensors: 500, FrequencyHz: 1.0, GraphComplexity: 1000}
+	fmt.Println("\n>>> SYSTEM WARM-UP (30 seconds) <<<")
+	warmupSc := Scenario{StepID: 0, NumSensors: 500, FrequencyHz: 0.5, GraphComplexity: 1000}
 	prepareEnvironment(warmupSc.GraphComplexity, warmupSc.NumSensors)
-	executeTestRun(warmupSc, "Centralized", 0, true)
+	executeTestRun(warmupSc, ArchConfig{Name: "Warmup", Mode: "Federated", NumISUs: len(pgDBs)}, 0, true)
 	fmt.Println(">>> Warm-up Complete. Cooling down... <<<")
 	time.Sleep(3 * time.Second)
 
@@ -135,7 +165,12 @@ func main() {
 		prepareEnvironment(sc.GraphComplexity, sc.NumSensors)
 
 		for _, arch := range architectures {
-			fmt.Printf("--- Arch: %s ---\n", arch)
+			if arch.Mode == "Federated" && arch.NumISUs > len(pgDBs) {
+				fmt.Printf("   [SKIP] %s requires %d ISUs, but only %d configured.\n", arch.Name, arch.NumISUs, len(pgDBs))
+				continue
+			}
+
+			fmt.Printf("--- Arch: %s (ISUs: %d) ---\n", arch.Name, arch.NumISUs)
 			for run := 1; run <= TotalRuns; run++ {
 
 				res := executeTestRun(sc, arch, run, false)
@@ -144,10 +179,14 @@ func main() {
 					strconv.Itoa(res.StepID),
 					strconv.Itoa(res.NumSensors),
 					fmt.Sprintf("%.2f", res.FrequencyHz),
-					arch,
+					res.Architecture,
+					strconv.Itoa(res.NumISUs),
 					strconv.Itoa(run),
 					strconv.Itoa(sc.GraphComplexity),
 					fmt.Sprintf("%.4f", res.AvgLatencyMs),
+					fmt.Sprintf("%.4f", res.P50LatencyMs),
+					fmt.Sprintf("%.4f", res.P95LatencyMs),
+					fmt.Sprintf("%.4f", res.P99LatencyMs),
 					strconv.FormatInt(res.MessagesLost, 10),
 					strconv.FormatInt(res.DbErrors, 10),
 					fmt.Sprintf("%.2f", res.ThroughputMsgSec),
@@ -156,8 +195,10 @@ func main() {
 				})
 				writer.Flush()
 
-				fmt.Printf("   > Run %d: Sent=%d | Lost=%d | DB_Err=%d | Lat=%.2fms | CPU=%.3fc | RAM=%.2fMB\n",
-					run, res.MessagesSent, res.MessagesLost, res.DbErrors, res.AvgLatencyMs, res.TargetCPUAvgCores, res.TargetRAMMaxMB)
+				fmt.Printf("   > Run %d: Sent=%d | Lost=%d | DB_Err=%d | Avg=%.2fms | P95=%.2fms | P99=%.2fms | Tput=%.1f msg/s | CPU=%.3fc | RAM=%.2fMB\n",
+					run, res.MessagesSent, res.MessagesLost, res.DbErrors,
+					res.AvgLatencyMs, res.P95LatencyMs, res.P99LatencyMs,
+					res.ThroughputMsgSec, res.TargetCPUAvgCores, res.TargetRAMMaxMB)
 
 				time.Sleep(2 * time.Second)
 			}
@@ -170,11 +211,14 @@ func main() {
 // SECTION II: ORCHESTRATION & MEASUREMENT
 // ======================================================================================
 
-func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
-	var totalLatency int64 = 0
+func executeTestRun(sc Scenario, arch ArchConfig, runID int, isWarmup bool) Result {
+	var totalLatencyMicro int64 = 0
 	var msgReceivedCount int64 = 0
 	var msgSentCount int64 = 0
 	var dbErrorCount int64 = 0
+
+	expectedMessages := int(float64(sc.NumSensors)*sc.FrequencyHz*float64(TestDurationSec)) + 1000
+	latenciesMs := make([]float64, 0, expectedMessages)
 
 	var muMetrics sync.Mutex
 	var wgServer sync.WaitGroup
@@ -184,20 +228,69 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 		duration = WarmupDurationSec
 	}
 
-	done := make(chan bool)
+ 	// Setup batch channel if using Centralized_Batched
+	var batchChan chan batchedEvent
+	var wgBatcher sync.WaitGroup
+	if arch.Mode == "Centralized_Batched" {
+		batchChan = make(chan batchedEvent, 20000)
+		numBatchWorkers := 4
+		for w := 0; w < numBatchWorkers; w++ {
+			wgBatcher.Add(1)
+			go func() {
+				defer wgBatcher.Done()
+				buffer := make([]batchedEvent, 0, BatchMaxSize)
+				flushTicker := time.NewTicker(BatchMaxFlush)
+				defer flushTicker.Stop()
+
+				flush := func() {
+					if len(buffer) == 0 {
+						return
+					}
+					err := writeBatchToDgraph(buffer)
+					now := time.Now()
+					if err != nil {
+						atomic.AddInt64(&dbErrorCount, int64(len(buffer)))
+					} else {
+						muMetrics.Lock()
+						for _, ev := range buffer {
+							latMicro := now.Sub(ev.sentTime).Microseconds()
+							totalLatencyMicro += latMicro
+							msgReceivedCount++
+							latenciesMs = append(latenciesMs, float64(latMicro)/1000.0)
+						}
+						muMetrics.Unlock()
+					}
+					buffer = buffer[:0]
+				}
+
+				for {
+					select {
+					case ev, ok := <-batchChan:
+						if !ok {
+							flush()
+							return
+						}
+						buffer = append(buffer, ev)
+						if len(buffer) >= BatchMaxSize {
+							flush()
+						}
+					case <-flushTicker.C:
+						flush()
+					}
+				}
+			}()
+		}
+	}
 
 	// --- A. SERVER SIDE ---
-	serverOpts := createMQTTOpts(fmt.Sprintf("srv_%s_%d_%d", arch, sc.NumSensors, runID))
-	serverOpts.SetOrderMatters(false) // Permite procesamiento asíncrono real
-	serverOpts.SetMessageChannelDepth(10000)
+	serverOpts := createMQTTOpts(fmt.Sprintf("srv_%s_%d_%d", arch.Name, sc.NumSensors, runID))
+	serverOpts.SetOrderMatters(false)
+	serverOpts.SetMessageChannelDepth(20000)
 
 	serverOpts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
-
-		// Extraer los datos de la red lo más rápido posible
 		payloadStr := string(msg.Payload())
 		topic := msg.Topic()
 
-		// Procesar asíncronamente para no bloquear el router de MQTT
 		wgServer.Add(1)
 		go func(pStr, tStr string) {
 			defer wgServer.Done()
@@ -207,26 +300,36 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 			parts := strings.Split(tStr, "/")
 			sensorID, _ := strconv.Atoi(parts[len(parts)-1])
 
+			if arch.Mode == "Centralized_Batched" {
+				batchChan <- batchedEvent{
+					sensorID: sensorID,
+					payload:  pStr,
+					sentTime: sentTime,
+				}
+				return
+			}
+
 			var err error
-			if arch == "Centralized" {
+			if arch.Mode == "Centralized_1to1" {
 				err = writeToDgraph(sensorID, pStr)
 			} else {
-				err = writeToTimescale(pStr)
+				isuIdx := sensorID % arch.NumISUs
+				err = writeToTimescaleISU(isuIdx, sensorID, pStr)
 			}
 
 			if err != nil {
 				atomic.AddInt64(&dbErrorCount, 1)
-				// Opcional: log.Printf("DB Error: %v", err)
 				return
 			}
 
 			latencyMicro := time.Since(sentTime).Microseconds()
 
 			muMetrics.Lock()
-			totalLatency += latencyMicro
+			totalLatencyMicro += latencyMicro
 			msgReceivedCount++
+			latenciesMs = append(latenciesMs, float64(latencyMicro)/1000.0)
 			muMetrics.Unlock()
-		}(payloadStr, topic) // Pasar variables por valor a la gorutina
+		}(payloadStr, topic)
 	})
 
 	srvClient := mqtt.NewClient(serverOpts)
@@ -234,15 +337,13 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 		log.Printf("Server Connect Error: %v", token.Error())
 		return Result{}
 	}
-	runTopicPrefix := fmt.Sprintf("%s%s/step%d/run%d/", TopicPrefix, arch, sc.StepID, runID)
+	runTopicPrefix := fmt.Sprintf("%s%s/step%d/run%d/", TopicPrefix, arch.Name, sc.StepID, runID)
 	srvClient.Subscribe(runTopicPrefix+"#", QoSLevel, nil)
 	time.Sleep(1 * time.Second)
 
 	// --- B. CLIENT SIDE ---
 	var wgSensors sync.WaitGroup
-
 	tickerInterval := time.Duration(1000.0/sc.FrequencyHz) * time.Millisecond
-
 	startTime := time.Now()
 
 	for i := 0; i < sc.NumSensors; i++ {
@@ -270,14 +371,11 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 					return
 				case <-ticker.C:
 					payload := fmt.Sprintf("%d", time.Now().UnixNano())
-					runTopicPrefix := fmt.Sprintf("%s%s/step%d/run%d/", TopicPrefix, arch, sc.StepID, runID)
 					t := c.Publish(runTopicPrefix+strconv.Itoa(id), QoSLevel, false, payload)
 					t.Wait()
 
 					if t.Error() == nil {
-						muMetrics.Lock()
-						msgSentCount++
-						muMetrics.Unlock()
+						atomic.AddInt64(&msgSentCount, 1)
 					}
 				}
 			}
@@ -290,11 +388,14 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 	fmt.Println("   > Sensors finished. Waiting for database to securely process queue...")
 	serverDone := make(chan struct{})
 	go func() {
-		wgServer.Wait() // Espera a que todas las inserciones en BD terminen
+		wgServer.Wait()
+		if arch.Mode == "Centralized_Batched" {
+			close(batchChan)
+			wgBatcher.Wait()
+		}
 		close(serverDone)
 	}()
 
-	// Damos un margen amplio (hasta 4 minutos) para evitar que las gorutinas se fuguen al siguiente run.
 	select {
 	case <-serverDone:
 		fmt.Println("   > All messages successfully written to DB.")
@@ -302,9 +403,8 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 		fmt.Println("   > [WARNING] DB drain timeout reached (4 min). DB is strictly bottlenecked.")
 	}
 
-	endTime := time.Now() // Calculamos el tiempo total de estrés de la BD
+	endTime := time.Now()
 	srvClient.Disconnect(250)
-	close(done)
 
 	var cpuAvg, ramMaxMB float64
 	if !isWarmup {
@@ -314,12 +414,11 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 		promURL := cfg.PrometheusURI
 		myNamespace := cfg.KubernetesNamespace
 
-		podRegex := "timescaledb-.*"
-		if arch == "Centralized" {
-			podRegex = "dgraph-dgraph-alpha-.*"
-		}
-
+		podRegex := buildPodRegex(arch)
 		windowSec := int(endTime.Sub(startTime).Seconds())
+		if windowSec < 30 {
+			windowSec = 30
+		}
 
 		cpuQuery := fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{namespace="%s", pod=~"%s", container!="POD", container!=""}[%ds]))`, myNamespace, podRegex, windowSec)
 		ramQuery := fmt.Sprintf(`sum(max_over_time(container_memory_working_set_bytes{namespace="%s", pod=~"%s", container!="POD", container!=""}[%ds])) / 1024 / 1024`, myNamespace, podRegex, windowSec)
@@ -336,28 +435,58 @@ func executeTestRun(sc Scenario, arch string, runID int, isWarmup bool) Result {
 		}
 	}
 
-	// --- C. STATS ---
-	avgLat := 0.0
-	if msgReceivedCount > 0 {
-		avgLat = float64(totalLatency) / float64(msgReceivedCount) / 1000.0
-	}
-
+	// --- C. STATS & PERCENTILES ---
+	avgLat, p50Lat, p95Lat, p99Lat := computeLatencyStats(latenciesMs, totalLatencyMicro, msgReceivedCount)
 	throughput := float64(msgReceivedCount) / float64(duration)
+	sent := atomic.LoadInt64(&msgSentCount)
+	dbErrs := atomic.LoadInt64(&dbErrorCount)
+	lost := sent - msgReceivedCount - dbErrs
+	if lost < 0 {
+		lost = 0
+	}
 
 	return Result{
 		StepID:            sc.StepID,
 		NumSensors:        sc.NumSensors,
 		FrequencyHz:       sc.FrequencyHz,
-		Architecture:      arch,
+		Architecture:      arch.Name,
+		NumISUs:           arch.NumISUs,
 		RunID:             runID,
 		AvgLatencyMs:      avgLat,
-		MessagesSent:      msgSentCount,
-		MessagesLost:      msgSentCount - msgReceivedCount - atomic.LoadInt64(&dbErrorCount),
-		DbErrors:          atomic.LoadInt64(&dbErrorCount),
+		P50LatencyMs:      p50Lat,
+		P95LatencyMs:      p95Lat,
+		P99LatencyMs:      p99Lat,
+		MessagesSent:      sent,
+		MessagesLost:      lost,
+		DbErrors:          dbErrs,
 		ThroughputMsgSec:  throughput,
 		TargetCPUAvgCores: cpuAvg,
 		TargetRAMMaxMB:    ramMaxMB,
 	}
+}
+
+func computeLatencyStats(samples []float64, totalMicro int64, count int64) (avg, p50, p95, p99 float64) {
+	if count == 0 || len(samples) == 0 {
+		return 0, 0, 0, 0
+	}
+	avg = float64(totalMicro) / float64(count) / 1000.0
+	sort.Float64s(samples)
+	n := len(samples)
+	p50 = samples[int(math.Min(float64(n-1), float64(n)*0.50))]
+	p95 = samples[int(math.Min(float64(n-1), float64(n)*0.95))]
+	p99 = samples[int(math.Min(float64(n-1), float64(n)*0.99))]
+	return
+}
+
+func buildPodRegex(arch ArchConfig) string {
+	if arch.Mode != "Federated" {
+		return "dgraph-dgraph-alpha-.*"
+	}
+	var pods []string
+	for i := 0; i < arch.NumISUs; i++ {
+		pods = append(pods, fmt.Sprintf("timescaledb-%d", i))
+	}
+	return "^(" + strings.Join(pods, "|") + ")$"
 }
 
 // ======================================================================================
@@ -378,15 +507,33 @@ func writeToDgraph(sensorID int, val string) error {
 	return err
 }
 
-func writeToTimescale(val string) error {
-	_, err := stmtTimescale.Exec(val)
+func writeBatchToDgraph(events []batchedEvent) error {
+	nodes := make([]SensorNode, 0, len(events))
+	for _, ev := range events {
+		if uid, exists := sensorUIDMap[ev.sensorID]; exists {
+			nodes = append(nodes, SensorNode{Uid: uid, Value: ev.payload})
+		}
+	}
+	if len(nodes) == 0 {
+		return nil
+	}
+	pb, _ := json.Marshal(nodes)
+	mu := &api.Mutation{SetJson: pb, CommitNow: true}
+	_, err := dgClient.NewTxn().Mutate(context.Background(), mu)
+	return err
+}
+
+func writeToTimescaleISU(isuIdx int, sensorID int, val string) error {
+	_, err := stmtsTimescale[isuIdx].Exec(sensorID, val)
 	return err
 }
 
 func prepareEnvironment(totalNodes int, activeSensors int) {
 	ctx := context.Background()
 	dgClient.Alter(ctx, &api.Operation{DropAll: true})
-	pgDB.Exec("TRUNCATE TABLE ingestion_test")
+	for _, db := range pgDBs {
+		db.Exec("TRUNCATE TABLE ingestion_test")
+	}
 
 	op := &api.Operation{Schema: `
 		name: string @index(hash) .
@@ -432,25 +579,47 @@ func prepareEnvironment(totalNodes int, activeSensors int) {
 }
 
 func initInfrastructure() {
-	conn, _ := grpc.Dial(cfg.DgraphURI, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(cfg.DgraphURI, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("Failed to connect to Dgraph: %v", err)
+	}
 	dgClient = dgo.NewDgraphClient(api.NewDgraphClient(conn))
 
-	var err error
-	pgDB, err = sql.Open("postgres", cfg.PostgresConn())
-	if err != nil {
-		log.Fatal(err)
+	numISUs := len(cfg.Timescale.Ports)
+	pgDBs = make([]*sql.DB, numISUs)
+	stmtsTimescale = make([]*sql.Stmt, numISUs)
+
+	for i := 0; i < numISUs; i++ {
+		db, err := sql.Open("postgres", cfg.PostgresConnForISU(i))
+		if err != nil {
+			log.Fatalf("Failed to open ISU %d: %v", i, err)
+		}
+		db.SetMaxOpenConns(60)
+		db.SetMaxIdleConns(20)
+
+		db.Exec("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")
+		db.Exec("CREATE TABLE IF NOT EXISTS ingestion_test (time TIMESTAMPTZ NOT NULL, sensor_id INT, payload TEXT);")
+		db.Exec("SELECT create_hypertable('ingestion_test', 'time', if_not_exists => TRUE);")
+
+		stmt, err := db.Prepare("INSERT INTO ingestion_test (time, sensor_id, payload) VALUES (NOW(), $1, $2)")
+		if err != nil {
+			log.Fatalf("Failed to prepare statement on ISU %d: %v", i, err)
+		}
+		pgDBs[i] = db
+		stmtsTimescale[i] = stmt
 	}
+}
 
-	pgDB.SetMaxOpenConns(100)
-	pgDB.SetMaxIdleConns(20)
-
-	pgDB.Exec("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")
-	pgDB.Exec("CREATE TABLE IF NOT EXISTS ingestion_test (time TIMESTAMPTZ NOT NULL, payload TEXT);")
-	pgDB.Exec("SELECT create_hypertable('ingestion_test', 'time', if_not_exists => TRUE);")
-
-	stmtTimescale, err = pgDB.Prepare("INSERT INTO ingestion_test (time, payload) VALUES (NOW(), $1)")
-	if err != nil {
-		log.Fatal(err)
+func closeInfrastructure() {
+	for _, stmt := range stmtsTimescale {
+		if stmt != nil {
+			stmt.Close()
+		}
+	}
+	for _, db := range pgDBs {
+		if db != nil {
+			db.Close()
+		}
 	}
 }
 
@@ -467,11 +636,16 @@ func createMQTTOpts(clientID string) *mqtt.ClientOptions {
 }
 
 func initCSVWriter() *csv.Writer {
-	file, _ := os.Create(OutputCSV)
+	os.MkdirAll("output", 0755)
+	file, err := os.Create(OutputCSV)
+	if err != nil {
+		log.Fatalf("Cannot create output CSV: %v", err)
+	}
 	writer := csv.NewWriter(file)
 	writer.Write([]string{
-		"Step_ID", "Num_Sensors", "Freq_Hz", "Architecture", "Run_ID", "Graph_Complexity",
-		"Avg_Latency_ms", "Packet_Loss_Network", "DB_Errors", "Throughput_msg_sec",
+		"Step_ID", "Num_Sensors", "Freq_Hz", "Architecture", "Num_ISUs", "Run_ID", "Graph_Complexity",
+		"Avg_Latency_ms", "P50_Latency_ms", "P95_Latency_ms", "P99_Latency_ms",
+		"Packet_Loss_Network", "DB_Errors", "Throughput_msg_sec",
 		"DB_CPU_Avg_Cores", "DB_RAM_Max_MB",
 	})
 	writer.Flush()
@@ -479,7 +653,6 @@ func initCSVWriter() *csv.Writer {
 }
 
 func queryPrometheus(promURL string, query string, evalTime time.Time) (float64, error) {
-	// Construir la URL con los parámetros
 	reqURL := fmt.Sprintf("%s/api/v1/query?query=%s&time=%d",
 		promURL,
 		url.QueryEscape(query),
@@ -501,7 +674,6 @@ func queryPrometheus(promURL string, query string, evalTime time.Time) (float64,
 		return 0, err
 	}
 
-	// Extraer el valor flotante del primer resultado
 	if len(promData.Data.Result) > 0 && len(promData.Data.Result[0].Value) == 2 {
 		valStr := fmt.Sprintf("%v", promData.Data.Result[0].Value[1])
 		return strconv.ParseFloat(valStr, 64)

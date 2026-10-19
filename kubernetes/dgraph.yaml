@@ -1,18 +1,20 @@
 zero:
+  replicaCount: 1
   service:
     type: NodePort
     nodePort: 32210
   nodeSelector:
-    kubernetes.io/hostname: fog2
+    kubernetes.io/hostname: edge1
   resources:
     requests:
-      cpu: "4"
-      memory: "8Gi"
+      cpu: "250m"
+      memory: "1Gi"
     limits:
-      cpu: "4"
+      cpu: "2"
       memory: "8Gi"
 
 alpha:
+  replicaCount: 1
   acl:
     enabled: false
   encryption:
@@ -27,14 +29,14 @@ alpha:
   persistentVolume:
     enabled: true
   nodeSelector:
-    kubernetes.io/hostname: fog2
+    kubernetes.io/hostname: edge1
   resources:
     requests:
-      cpu: "4"
-      memory: "8Gi"
+      cpu: "500m"
+      memory: "2Gi"
     limits:
       cpu: "4"
-      memory: "8Gi"
+      memory: "16Gi"
 
 ratel:
   enabled: true
@@ -42,4 +44,4 @@ ratel:
     type: NodePort
     nodePort: 32212
   nodeSelector:
-    kubernetes.io/hostname: fog2
+    kubernetes.io/hostname: edge1

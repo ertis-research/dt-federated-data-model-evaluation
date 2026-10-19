@@ -1,19 +1,19 @@
-replicaCount: 3
+replicaCount: 1
 
 nodeSelector:
-  kubernetes.io/hostname: fog4
+  kubernetes.io/hostname: edge2
 
 service:
-  type: LoadBalancer
+  type: NodePort
   mqtt: 1883
 
 persistence:
-  enabled: true
+  enabled: false
 
 resources:
   requests:
-    cpu: "4"
-    memory: "8Gi"
+    cpu: "500m"
+    memory: "1Gi"
   limits:
     cpu: "4"
     memory: "8Gi"
