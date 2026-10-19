@@ -36,10 +36,13 @@ import (
 const (
 	TopicPrefix       = "dt/sensor/"
 	OutputCSV         = "output/ingestion_evaluation_results_v2.csv"
-	TotalRuns         = 5
-	TestDurationSec   = 120 // Test duration
-	WarmupDurationSec = 30  // Warm-up duration
-	QoSLevel          = 1   // At least once
+	TotalRuns         = 3
+	TestDurationSec   = 30 // 30s steady-state per run
+	WarmupDurationSec = 15 // Warm-up duration
+	DBDrainTimeoutSec = 20 // Max wait time for DB queue drain after sensors stop
+	PromScrapeWaitSec = 10 // Wait time for kubelet cAdvisor & Prometheus scrape
+	MinPromWindowSec  = 60 // Minimum Prometheus rate() window in seconds to guarantee >=2 kubelet samples
+	QoSLevel          = 1  // At least once
 
 	// Batching parameters for Centralized_Batched baseline
 	BatchMaxSize  = 100
@@ -338,15 +341,20 @@ func executeTestRun(sc Scenario, arch ArchConfig, runID int, isWarmup bool) Resu
 		return Result{}
 	}
 	runTopicPrefix := fmt.Sprintf("%s%s/step%d/run%d/", TopicPrefix, arch.Name, sc.StepID, runID)
-	srvClient.Subscribe(runTopicPrefix+"#", QoSLevel, nil)
-	time.Sleep(1 * time.Second)
+	if subToken := srvClient.Subscribe(runTopicPrefix+"#", QoSLevel, nil); subToken.Wait() && subToken.Error() != nil {
+		log.Printf("Server Subscribe Error: %v", subToken.Error())
+		return Result{}
+	}
+	time.Sleep(500 * time.Millisecond)
 
 	// --- B. CLIENT SIDE ---
+	var wgReady sync.WaitGroup
 	var wgSensors sync.WaitGroup
+	startSignal := make(chan struct{})
 	tickerInterval := time.Duration(1000.0/sc.FrequencyHz) * time.Millisecond
-	startTime := time.Now()
 
 	for i := 0; i < sc.NumSensors; i++ {
+		wgReady.Add(1)
 		wgSensors.Add(1)
 		go func(id int) {
 			defer wgSensors.Done()
@@ -355,9 +363,13 @@ func executeTestRun(sc Scenario, arch ArchConfig, runID int, isWarmup bool) Resu
 			c := mqtt.NewClient(cOpts)
 			if token := c.Connect(); token.Wait() && token.Error() != nil {
 				log.Printf("Sensor %d fails connection: %v", id, token.Error())
+				wgReady.Done()
 				return
 			}
 			defer c.Disconnect(0)
+
+			wgReady.Done()
+			<-startSignal // Wait until all sensors are connected and server subscription is active
 
 			time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
 
@@ -382,6 +394,11 @@ func executeTestRun(sc Scenario, arch ArchConfig, runID int, isWarmup bool) Resu
 		}(i)
 	}
 
+	// Wait for all sensor MQTT clients to finish TCP/MQTT handshake before starting the timer
+	wgReady.Wait()
+	startTime := time.Now()
+	close(startSignal)
+
 	wgSensors.Wait()
 	time.Sleep(2 * time.Second)
 
@@ -399,8 +416,8 @@ func executeTestRun(sc Scenario, arch ArchConfig, runID int, isWarmup bool) Resu
 	select {
 	case <-serverDone:
 		fmt.Println("   > All messages successfully written to DB.")
-	case <-time.After(4 * time.Minute):
-		fmt.Println("   > [WARNING] DB drain timeout reached (4 min). DB is strictly bottlenecked.")
+	case <-time.After(time.Duration(DBDrainTimeoutSec) * time.Second):
+		fmt.Printf("   > [WARNING] DB drain timeout reached (%ds). DB is strictly bottlenecked.\n", DBDrainTimeoutSec)
 	}
 
 	endTime := time.Now()
@@ -408,16 +425,16 @@ func executeTestRun(sc Scenario, arch ArchConfig, runID int, isWarmup bool) Resu
 
 	var cpuAvg, ramMaxMB float64
 	if !isWarmup {
-		fmt.Println("   > Waiting for Prometheus scraping (15s)...")
-		time.Sleep(15 * time.Second)
+		fmt.Printf("   > Waiting for Prometheus scraping (%ds)...\n", PromScrapeWaitSec)
+		time.Sleep(time.Duration(PromScrapeWaitSec) * time.Second)
 
 		promURL := cfg.PrometheusURI
 		myNamespace := cfg.KubernetesNamespace
 
 		podRegex := buildPodRegex(arch)
 		windowSec := int(endTime.Sub(startTime).Seconds())
-		if windowSec < 30 {
-			windowSec = 30
+		if windowSec < MinPromWindowSec {
+			windowSec = MinPromWindowSec
 		}
 
 		cpuQuery := fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{namespace="%s", pod=~"%s", container!="POD", container!=""}[%ds]))`, myNamespace, podRegex, windowSec)
@@ -524,15 +541,17 @@ func writeBatchToDgraph(events []batchedEvent) error {
 }
 
 func writeToTimescaleISU(isuIdx int, sensorID int, val string) error {
-	_, err := stmtsTimescale[isuIdx].Exec(sensorID, val)
+	_, err := pgDBs[isuIdx].Exec("INSERT INTO ingestion_test (time, sensor_id, payload) VALUES (NOW(), $1, $2)", sensorID, val)
 	return err
 }
 
 func prepareEnvironment(totalNodes int, activeSensors int) {
 	ctx := context.Background()
 	dgClient.Alter(ctx, &api.Operation{DropAll: true})
-	for _, db := range pgDBs {
+	for i, db := range pgDBs {
 		db.Exec("TRUNCATE TABLE ingestion_test")
+		// Insert 1 seed row so TimescaleDB pre-allocates the current time chunk before Run 1 starts
+		stmtsTimescale[i].Exec(0, "chunk_init")
 	}
 
 	op := &api.Operation{Schema: `
@@ -594,7 +613,7 @@ func initInfrastructure() {
 		if err != nil {
 			log.Fatalf("Failed to open ISU %d: %v", i, err)
 		}
-		db.SetMaxOpenConns(60)
+		db.SetMaxOpenConns(100)
 		db.SetMaxIdleConns(20)
 
 		db.Exec("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")

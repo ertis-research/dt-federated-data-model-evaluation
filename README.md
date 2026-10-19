@@ -119,12 +119,19 @@ cd evaluation
 # Run the ingestion performance evaluation (Centralized 1-to-1, Batched, and Federated 1..8 ISUs)
 go run ingestion/main.go
 
-# Run the end-to-end query performance evaluation (Scalability, Q1/Q2/Q3 Complexity, Concurrency, and Skew)
-go run query/main.go
+# Run ALL end-to-end query sub-experiments sequentially (default: -exp all)
+go run ./query
+
+# Alternatively, run individual query sub-experiments (or comma-separated combinations):
+go run ./query -exp 1     # Sub-Experiment 1: Horizontal Scalability (exp1_scalability.csv)
+go run ./query -exp 2     # Sub-Experiment 2: Query Complexity & Concurrency (exp2_complexity_concurrency.csv)
+go run ./query -exp 3     # Sub-Experiment 3: Data Partition Skew (exp3_skew.csv)
+go run ./query -exp 1,3   # Run only Sub-Experiments 1 and 3
 ```
+Each query evaluation run automatically stores its CSV output files inside a timestamped folder: `evaluation/query/output/<YYYY-MM-DD_HH-MM-SS>/`.
 
 #### Results
-After generating the raw performance data, you can process the results and generate plots by navigating to the plots directory. Ensure your Python virtual environment is activated before execution.
+After generating the raw performance data, you can process the results and generate plots by navigating to the `plots` directory. Ensure your Python virtual environment is activated before execution.
 
 ```bash
 # Navigate to the plots directory
@@ -142,9 +149,20 @@ source venv/bin/activate
 # Install required dependencies
 pip install -r requirements.txt
 
-# Generate ingestion results
+# Generate ingestion plots
 python src/ingestion.py
 
-# Generate query results
+# Generate ALL query evaluation plots (automatically selects the latest execution)
 python src/query.py
+
+# Or generate plots for each query sub-experiment individually (defaults to latest execution):
+python src/query_exp1_scalability.py
+python src/query_exp2_complexity.py
+python src/query_exp3_skew.py
+
+# To generate plots from a specific timestamped execution folder (positional or via --dir):
+python src/query_exp1_scalability.py 2026-10-19_16-30-00
+python src/query_exp2_complexity.py --dir 2026-10-19_16-30-00
+python src/query_exp3_skew.py --dir ../evaluation/query/output/2026-10-19_16-30-00
+python src/query.py --dir 2026-10-19_16-30-00
 ```
