@@ -1,0 +1,596 @@
+nohup: ignoring input
+Starting END-TO-END SEMANTIC QUERY EVALUATION (WarmUp: 5, Runs: 30, Available ISUs: 8)...
+Output Directory: query/output/2026-10-27_12-04-42
+
+======================================================================
+SUB-EXPERIMENT 1: HORIZONTAL SCALABILITY (N = 1, 2, 4, 8 ISUs)
+======================================================================
+
+--- [Exp1_Scalability] Arch: Centralized | Sensors: 500 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 35s... Ready.
+     Run  1/30: Total=37.64ms (S1_Anchor=30.94ms | S2_IO=0.00ms | S3_Hydr=0.54ms | S4_Query=6.11ms) | Integrity=100.0% | Mem=2.91MB
+     Run 10/30: Total=36.81ms (S1_Anchor=27.53ms | S2_IO=0.00ms | S3_Hydr=0.54ms | S4_Query=8.70ms) | Integrity=100.0% | Mem=2.93MB
+     Run 20/30: Total=38.41ms (S1_Anchor=30.51ms | S2_IO=0.00ms | S3_Hydr=0.56ms | S4_Query=7.30ms) | Integrity=100.0% | Mem=2.91MB
+     Run 30/30: Total=34.38ms (S1_Anchor=27.51ms | S2_IO=0.00ms | S3_Hydr=0.55ms | S4_Query=6.28ms) | Integrity=100.0% | Mem=2.93MB
+
+--- [Exp1_Scalability] Arch: Federated_1ISU | Sensors: 500 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=41.19ms (S1_Anchor=26.02ms | S2_IO=7.55ms | S3_Hydr=1.46ms | S4_Query=6.11ms) | Integrity=100.0% | Mem=3.11MB
+     Run 10/30: Total=48.23ms (S1_Anchor=31.31ms | S2_IO=8.07ms | S3_Hydr=2.35ms | S4_Query=6.45ms) | Integrity=100.0% | Mem=3.08MB
+     Run 20/30: Total=45.05ms (S1_Anchor=27.38ms | S2_IO=8.57ms | S3_Hydr=2.37ms | S4_Query=6.68ms) | Integrity=100.0% | Mem=3.12MB
+     Run 30/30: Total=50.43ms (S1_Anchor=28.59ms | S2_IO=11.90ms | S3_Hydr=2.38ms | S4_Query=7.51ms) | Integrity=100.0% | Mem=3.08MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=49.24ms (S1_Anchor=29.37ms | S2_IO=11.64ms | S3_Hydr=4.52ms | S4_Query=3.68ms) | Integrity=100.0% | Mem=3.16MB
+     Run 10/30: Total=50.49ms (S1_Anchor=28.06ms | S2_IO=13.37ms | S3_Hydr=2.36ms | S4_Query=6.66ms) | Integrity=100.0% | Mem=3.11MB
+     Run 20/30: Total=60.32ms (S1_Anchor=33.14ms | S2_IO=16.14ms | S3_Hydr=2.48ms | S4_Query=8.52ms) | Integrity=100.0% | Mem=3.13MB
+     Run 30/30: Total=50.26ms (S1_Anchor=25.99ms | S2_IO=13.49ms | S3_Hydr=2.37ms | S4_Query=8.36ms) | Integrity=100.0% | Mem=3.17MB
+
+--- [Exp1_Scalability] Arch: Federated_2ISU | Sensors: 500 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=46.06ms (S1_Anchor=29.82ms | S2_IO=7.52ms | S3_Hydr=2.37ms | S4_Query=6.31ms) | Integrity=100.0% | Mem=3.13MB
+     Run 10/30: Total=46.51ms (S1_Anchor=27.40ms | S2_IO=8.98ms | S3_Hydr=4.20ms | S4_Query=5.89ms) | Integrity=100.0% | Mem=3.04MB
+     Run 20/30: Total=46.45ms (S1_Anchor=29.29ms | S2_IO=8.09ms | S3_Hydr=2.36ms | S4_Query=6.58ms) | Integrity=100.0% | Mem=3.09MB
+     Run 30/30: Total=46.89ms (S1_Anchor=28.97ms | S2_IO=7.95ms | S3_Hydr=2.36ms | S4_Query=7.58ms) | Integrity=100.0% | Mem=3.09MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=48.43ms (S1_Anchor=27.95ms | S2_IO=10.56ms | S3_Hydr=2.33ms | S4_Query=7.55ms) | Integrity=100.0% | Mem=3.08MB
+     Run 10/30: Total=55.15ms (S1_Anchor=32.54ms | S2_IO=11.72ms | S3_Hydr=2.65ms | S4_Query=8.20ms) | Integrity=100.0% | Mem=3.02MB
+     Run 20/30: Total=43.91ms (S1_Anchor=25.09ms | S2_IO=8.93ms | S3_Hydr=3.76ms | S4_Query=6.08ms) | Integrity=100.0% | Mem=3.08MB
+     Run 30/30: Total=45.18ms (S1_Anchor=31.72ms | S2_IO=7.60ms | S3_Hydr=1.51ms | S4_Query=4.30ms) | Integrity=100.0% | Mem=3.08MB
+
+--- [Exp1_Scalability] Arch: Federated_4ISU | Sensors: 500 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 30s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=47.67ms (S1_Anchor=30.69ms | S2_IO=6.07ms | S3_Hydr=2.32ms | S4_Query=8.55ms) | Integrity=100.0% | Mem=3.10MB
+     Run 10/30: Total=42.53ms (S1_Anchor=26.46ms | S2_IO=5.68ms | S3_Hydr=3.22ms | S4_Query=7.13ms) | Integrity=100.0% | Mem=3.06MB
+     Run 20/30: Total=43.07ms (S1_Anchor=27.43ms | S2_IO=6.81ms | S3_Hydr=2.32ms | S4_Query=6.46ms) | Integrity=100.0% | Mem=3.13MB
+     Run 30/30: Total=48.94ms (S1_Anchor=32.50ms | S2_IO=7.18ms | S3_Hydr=2.33ms | S4_Query=6.85ms) | Integrity=100.0% | Mem=3.07MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=43.72ms (S1_Anchor=27.35ms | S2_IO=5.18ms | S3_Hydr=2.58ms | S4_Query=8.56ms) | Integrity=100.0% | Mem=3.10MB
+     Run 10/30: Total=43.26ms (S1_Anchor=28.20ms | S2_IO=6.69ms | S3_Hydr=2.43ms | S4_Query=5.90ms) | Integrity=100.0% | Mem=3.10MB
+     Run 20/30: Total=41.69ms (S1_Anchor=26.49ms | S2_IO=5.79ms | S3_Hydr=3.83ms | S4_Query=5.54ms) | Integrity=100.0% | Mem=3.05MB
+     Run 30/30: Total=43.82ms (S1_Anchor=26.89ms | S2_IO=6.70ms | S3_Hydr=3.97ms | S4_Query=6.22ms) | Integrity=100.0% | Mem=3.09MB
+
+--- [Exp1_Scalability] Arch: Federated_8ISU | Sensors: 500 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=44.93ms (S1_Anchor=29.57ms | S2_IO=4.38ms | S3_Hydr=2.39ms | S4_Query=8.55ms) | Integrity=100.0% | Mem=3.13MB
+     Run 10/30: Total=45.51ms (S1_Anchor=29.69ms | S2_IO=4.99ms | S3_Hydr=2.35ms | S4_Query=8.43ms) | Integrity=100.0% | Mem=3.09MB
+     Run 20/30: Total=38.87ms (S1_Anchor=26.03ms | S2_IO=5.76ms | S3_Hydr=2.22ms | S4_Query=4.78ms) | Integrity=100.0% | Mem=3.11MB
+     Run 30/30: Total=41.13ms (S1_Anchor=27.79ms | S2_IO=4.96ms | S3_Hydr=2.41ms | S4_Query=5.93ms) | Integrity=100.0% | Mem=3.14MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=45.91ms (S1_Anchor=30.29ms | S2_IO=5.24ms | S3_Hydr=3.85ms | S4_Query=6.49ms) | Integrity=100.0% | Mem=3.07MB
+     Run 10/30: Total=41.98ms (S1_Anchor=27.60ms | S2_IO=5.92ms | S3_Hydr=2.50ms | S4_Query=5.92ms) | Integrity=100.0% | Mem=3.08MB
+     Run 20/30: Total=45.54ms (S1_Anchor=29.34ms | S2_IO=5.21ms | S3_Hydr=2.40ms | S4_Query=8.56ms) | Integrity=100.0% | Mem=3.17MB
+     Run 30/30: Total=44.65ms (S1_Anchor=32.74ms | S2_IO=5.11ms | S3_Hydr=3.27ms | S4_Query=3.51ms) | Integrity=100.0% | Mem=3.07MB
+
+--- [Exp1_Scalability] Arch: Centralized | Sensors: 1000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 35s... Ready.
+     Run  1/30: Total=53.13ms (S1_Anchor=44.07ms | S2_IO=0.00ms | S3_Hydr=0.89ms | S4_Query=8.10ms) | Integrity=100.0% | Mem=5.57MB
+     Run 10/30: Total=58.83ms (S1_Anchor=44.92ms | S2_IO=0.00ms | S3_Hydr=0.76ms | S4_Query=13.05ms) | Integrity=100.0% | Mem=5.56MB
+     Run 20/30: Total=81.99ms (S1_Anchor=50.43ms | S2_IO=0.00ms | S3_Hydr=20.96ms | S4_Query=10.51ms) | Integrity=100.0% | Mem=5.66MB
+     Run 30/30: Total=53.78ms (S1_Anchor=42.63ms | S2_IO=0.00ms | S3_Hydr=0.92ms | S4_Query=10.17ms) | Integrity=100.0% | Mem=5.55MB
+
+--- [Exp1_Scalability] Arch: Federated_1ISU | Sensors: 1000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=68.05ms (S1_Anchor=41.11ms | S2_IO=9.23ms | S3_Hydr=4.48ms | S4_Query=13.16ms) | Integrity=100.0% | Mem=5.90MB
+     Run 10/30: Total=68.82ms (S1_Anchor=39.74ms | S2_IO=10.44ms | S3_Hydr=4.42ms | S4_Query=14.13ms) | Integrity=100.0% | Mem=5.87MB
+     Run 20/30: Total=65.01ms (S1_Anchor=34.77ms | S2_IO=11.99ms | S3_Hydr=6.59ms | S4_Query=11.58ms) | Integrity=100.0% | Mem=5.83MB
+     Run 30/30: Total=63.93ms (S1_Anchor=36.52ms | S2_IO=9.04ms | S3_Hydr=6.18ms | S4_Query=12.04ms) | Integrity=100.0% | Mem=5.90MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=76.49ms (S1_Anchor=41.05ms | S2_IO=22.10ms | S3_Hydr=2.52ms | S4_Query=10.73ms) | Integrity=100.0% | Mem=5.90MB
+     Run 10/30: Total=75.89ms (S1_Anchor=38.23ms | S2_IO=20.12ms | S3_Hydr=4.48ms | S4_Query=12.99ms) | Integrity=100.0% | Mem=5.91MB
+     Run 20/30: Total=81.30ms (S1_Anchor=40.16ms | S2_IO=22.12ms | S3_Hydr=4.58ms | S4_Query=14.37ms) | Integrity=100.0% | Mem=5.88MB
+     Run 30/30: Total=78.09ms (S1_Anchor=39.63ms | S2_IO=19.37ms | S3_Hydr=4.98ms | S4_Query=14.02ms) | Integrity=100.0% | Mem=5.94MB
+
+--- [Exp1_Scalability] Arch: Federated_2ISU | Sensors: 1000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=68.14ms (S1_Anchor=40.84ms | S2_IO=10.52ms | S3_Hydr=4.57ms | S4_Query=12.15ms) | Integrity=100.0% | Mem=5.90MB
+     Run 10/30: Total=59.57ms (S1_Anchor=37.83ms | S2_IO=10.54ms | S3_Hydr=1.75ms | S4_Query=9.39ms) | Integrity=100.0% | Mem=5.90MB
+     Run 20/30: Total=60.80ms (S1_Anchor=34.71ms | S2_IO=7.50ms | S3_Hydr=4.72ms | S4_Query=13.80ms) | Integrity=100.0% | Mem=5.84MB
+     Run 30/30: Total=72.87ms (S1_Anchor=41.05ms | S2_IO=11.61ms | S3_Hydr=4.68ms | S4_Query=15.45ms) | Integrity=100.0% | Mem=5.91MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=67.49ms (S1_Anchor=38.36ms | S2_IO=12.69ms | S3_Hydr=4.55ms | S4_Query=11.84ms) | Integrity=100.0% | Mem=5.94MB
+     Run 10/30: Total=69.40ms (S1_Anchor=38.91ms | S2_IO=12.14ms | S3_Hydr=6.68ms | S4_Query=11.60ms) | Integrity=100.0% | Mem=5.84MB
+     Run 20/30: Total=70.41ms (S1_Anchor=39.52ms | S2_IO=11.75ms | S3_Hydr=4.44ms | S4_Query=14.63ms) | Integrity=100.0% | Mem=5.91MB
+     Run 30/30: Total=76.37ms (S1_Anchor=42.65ms | S2_IO=16.72ms | S3_Hydr=4.47ms | S4_Query=12.46ms) | Integrity=100.0% | Mem=5.83MB
+
+--- [Exp1_Scalability] Arch: Federated_4ISU | Sensors: 1000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 35s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=68.47ms (S1_Anchor=37.63ms | S2_IO=11.12ms | S3_Hydr=4.48ms | S4_Query=15.16ms) | Integrity=100.0% | Mem=5.88MB
+     Run 10/30: Total=63.37ms (S1_Anchor=37.40ms | S2_IO=7.87ms | S3_Hydr=4.44ms | S4_Query=13.57ms) | Integrity=100.0% | Mem=5.88MB
+     Run 20/30: Total=67.95ms (S1_Anchor=39.35ms | S2_IO=9.84ms | S3_Hydr=7.69ms | S4_Query=11.00ms) | Integrity=100.0% | Mem=5.82MB
+     Run 30/30: Total=62.81ms (S1_Anchor=36.89ms | S2_IO=8.29ms | S3_Hydr=4.68ms | S4_Query=12.88ms) | Integrity=100.0% | Mem=5.83MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=69.26ms (S1_Anchor=39.43ms | S2_IO=8.06ms | S3_Hydr=5.94ms | S4_Query=15.68ms) | Integrity=100.0% | Mem=5.90MB
+     Run 10/30: Total=65.60ms (S1_Anchor=39.62ms | S2_IO=9.38ms | S3_Hydr=3.07ms | S4_Query=13.45ms) | Integrity=100.0% | Mem=5.87MB
+     Run 20/30: Total=66.24ms (S1_Anchor=36.36ms | S2_IO=10.50ms | S3_Hydr=7.11ms | S4_Query=12.19ms) | Integrity=100.0% | Mem=5.87MB
+     Run 30/30: Total=61.75ms (S1_Anchor=36.98ms | S2_IO=7.40ms | S3_Hydr=4.41ms | S4_Query=12.89ms) | Integrity=100.0% | Mem=5.84MB
+
+--- [Exp1_Scalability] Arch: Federated_8ISU | Sensors: 1000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=59.97ms (S1_Anchor=36.27ms | S2_IO=6.48ms | S3_Hydr=4.51ms | S4_Query=12.63ms) | Integrity=100.0% | Mem=5.84MB
+     Run 10/30: Total=66.81ms (S1_Anchor=39.90ms | S2_IO=7.93ms | S3_Hydr=7.40ms | S4_Query=11.50ms) | Integrity=100.0% | Mem=5.87MB
+     Run 20/30: Total=62.15ms (S1_Anchor=38.30ms | S2_IO=6.13ms | S3_Hydr=4.75ms | S4_Query=12.89ms) | Integrity=100.0% | Mem=5.86MB
+     Run 30/30: Total=65.70ms (S1_Anchor=39.73ms | S2_IO=5.69ms | S3_Hydr=6.53ms | S4_Query=13.49ms) | Integrity=100.0% | Mem=5.92MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=74.94ms (S1_Anchor=51.14ms | S2_IO=7.23ms | S3_Hydr=4.05ms | S4_Query=12.43ms) | Integrity=100.0% | Mem=5.88MB
+     Run 10/30: Total=63.52ms (S1_Anchor=38.32ms | S2_IO=7.41ms | S3_Hydr=5.02ms | S4_Query=12.67ms) | Integrity=100.0% | Mem=5.88MB
+     Run 20/30: Total=67.61ms (S1_Anchor=42.50ms | S2_IO=6.79ms | S3_Hydr=5.89ms | S4_Query=12.38ms) | Integrity=100.0% | Mem=5.84MB
+     Run 30/30: Total=64.28ms (S1_Anchor=39.20ms | S2_IO=5.55ms | S3_Hydr=4.72ms | S4_Query=14.75ms) | Integrity=100.0% | Mem=5.81MB
+
+--- [Exp1_Scalability] Arch: Centralized | Sensors: 2000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+     Run  1/30: Total=92.38ms (S1_Anchor=66.13ms | S2_IO=0.00ms | S3_Hydr=1.88ms | S4_Query=23.93ms) | Integrity=100.0% | Mem=10.71MB
+     Run 10/30: Total=127.63ms (S1_Anchor=103.95ms | S2_IO=0.00ms | S3_Hydr=1.56ms | S4_Query=21.97ms) | Integrity=100.0% | Mem=10.72MB
+     Run 20/30: Total=127.55ms (S1_Anchor=99.03ms | S2_IO=0.00ms | S3_Hydr=1.21ms | S4_Query=27.17ms) | Integrity=100.0% | Mem=10.66MB
+     Run 30/30: Total=88.45ms (S1_Anchor=69.17ms | S2_IO=0.00ms | S3_Hydr=1.12ms | S4_Query=18.02ms) | Integrity=100.0% | Mem=10.72MB
+
+--- [Exp1_Scalability] Arch: Federated_1ISU | Sensors: 2000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=102.96ms (S1_Anchor=58.05ms | S2_IO=10.40ms | S3_Hydr=9.86ms | S4_Query=24.53ms) | Integrity=100.0% | Mem=11.37MB
+     Run 10/30: Total=103.18ms (S1_Anchor=57.85ms | S2_IO=12.33ms | S3_Hydr=8.07ms | S4_Query=24.79ms) | Integrity=100.0% | Mem=11.36MB
+     Run 20/30: Total=106.07ms (S1_Anchor=58.55ms | S2_IO=10.62ms | S3_Hydr=9.77ms | S4_Query=27.01ms) | Integrity=100.0% | Mem=11.30MB
+     Run 30/30: Total=106.90ms (S1_Anchor=58.18ms | S2_IO=9.95ms | S3_Hydr=16.45ms | S4_Query=22.12ms) | Integrity=100.0% | Mem=11.34MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=119.60ms (S1_Anchor=56.19ms | S2_IO=29.59ms | S3_Hydr=10.28ms | S4_Query=23.40ms) | Integrity=100.0% | Mem=11.48MB
+     Run 10/30: Total=112.48ms (S1_Anchor=48.85ms | S2_IO=28.76ms | S3_Hydr=10.55ms | S4_Query=24.17ms) | Integrity=100.0% | Mem=11.57MB
+     Run 20/30: Total=164.57ms (S1_Anchor=95.64ms | S2_IO=32.81ms | S3_Hydr=10.41ms | S4_Query=24.82ms) | Integrity=100.0% | Mem=11.50MB
+     Run 30/30: Total=125.20ms (S1_Anchor=56.83ms | S2_IO=38.01ms | S3_Hydr=6.08ms | S4_Query=24.12ms) | Integrity=100.0% | Mem=11.49MB
+
+--- [Exp1_Scalability] Arch: Federated_2ISU | Sensors: 2000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=103.80ms (S1_Anchor=57.65ms | S2_IO=12.02ms | S3_Hydr=9.17ms | S4_Query=24.81ms) | Integrity=100.0% | Mem=11.38MB
+     Run 10/30: Total=108.43ms (S1_Anchor=58.02ms | S2_IO=11.86ms | S3_Hydr=10.62ms | S4_Query=27.49ms) | Integrity=100.0% | Mem=11.51MB
+     Run 20/30: Total=100.60ms (S1_Anchor=54.46ms | S2_IO=11.90ms | S3_Hydr=11.76ms | S4_Query=22.34ms) | Integrity=100.0% | Mem=11.31MB
+     Run 30/30: Total=101.70ms (S1_Anchor=61.93ms | S2_IO=9.58ms | S3_Hydr=8.89ms | S4_Query=21.18ms) | Integrity=100.0% | Mem=11.41MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=108.13ms (S1_Anchor=57.45ms | S2_IO=22.07ms | S3_Hydr=8.73ms | S4_Query=19.79ms) | Integrity=100.0% | Mem=11.33MB
+     Run 10/30: Total=110.09ms (S1_Anchor=57.05ms | S2_IO=21.50ms | S3_Hydr=9.29ms | S4_Query=22.15ms) | Integrity=100.0% | Mem=11.33MB
+     Run 20/30: Total=116.06ms (S1_Anchor=59.29ms | S2_IO=24.54ms | S3_Hydr=9.52ms | S4_Query=22.57ms) | Integrity=100.0% | Mem=11.35MB
+     Run 30/30: Total=115.99ms (S1_Anchor=61.64ms | S2_IO=22.14ms | S3_Hydr=10.94ms | S4_Query=21.19ms) | Integrity=100.0% | Mem=11.33MB
+
+--- [Exp1_Scalability] Arch: Federated_4ISU | Sensors: 2000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 35s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=101.86ms (S1_Anchor=63.46ms | S2_IO=10.79ms | S3_Hydr=10.55ms | S4_Query=16.98ms) | Integrity=100.0% | Mem=11.41MB
+     Run 10/30: Total=107.34ms (S1_Anchor=62.76ms | S2_IO=10.23ms | S3_Hydr=13.08ms | S4_Query=21.00ms) | Integrity=100.0% | Mem=11.41MB
+     Run 20/30: Total=97.56ms (S1_Anchor=56.79ms | S2_IO=8.11ms | S3_Hydr=9.35ms | S4_Query=23.16ms) | Integrity=100.0% | Mem=11.38MB
+     Run 30/30: Total=99.18ms (S1_Anchor=54.40ms | S2_IO=10.33ms | S3_Hydr=9.61ms | S4_Query=24.19ms) | Integrity=100.0% | Mem=11.47MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=100.09ms (S1_Anchor=53.67ms | S2_IO=14.60ms | S3_Hydr=9.10ms | S4_Query=22.56ms) | Integrity=100.0% | Mem=11.30MB
+     Run 10/30: Total=101.70ms (S1_Anchor=56.31ms | S2_IO=13.39ms | S3_Hydr=8.51ms | S4_Query=23.02ms) | Integrity=100.0% | Mem=11.34MB
+     Run 20/30: Total=99.65ms (S1_Anchor=55.41ms | S2_IO=11.68ms | S3_Hydr=9.75ms | S4_Query=22.65ms) | Integrity=100.0% | Mem=11.43MB
+     Run 30/30: Total=104.58ms (S1_Anchor=58.32ms | S2_IO=14.26ms | S3_Hydr=9.01ms | S4_Query=22.85ms) | Integrity=100.0% | Mem=11.32MB
+
+--- [Exp1_Scalability] Arch: Federated_8ISU | Sensors: 2000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=104.62ms (S1_Anchor=61.33ms | S2_IO=10.03ms | S3_Hydr=9.52ms | S4_Query=23.61ms) | Integrity=100.0% | Mem=11.38MB
+     Run 10/30: Total=104.15ms (S1_Anchor=61.21ms | S2_IO=8.77ms | S3_Hydr=11.57ms | S4_Query=22.50ms) | Integrity=100.0% | Mem=11.37MB
+     Run 20/30: Total=101.72ms (S1_Anchor=55.25ms | S2_IO=11.23ms | S3_Hydr=10.10ms | S4_Query=24.68ms) | Integrity=100.0% | Mem=11.30MB
+     Run 30/30: Total=102.83ms (S1_Anchor=57.74ms | S2_IO=11.25ms | S3_Hydr=8.93ms | S4_Query=24.77ms) | Integrity=100.0% | Mem=11.35MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=100.07ms (S1_Anchor=57.01ms | S2_IO=10.38ms | S3_Hydr=10.60ms | S4_Query=21.96ms) | Integrity=100.0% | Mem=11.33MB
+     Run 10/30: Total=106.43ms (S1_Anchor=60.34ms | S2_IO=11.91ms | S3_Hydr=9.19ms | S4_Query=24.85ms) | Integrity=100.0% | Mem=11.34MB
+     Run 20/30: Total=100.48ms (S1_Anchor=56.77ms | S2_IO=11.49ms | S3_Hydr=9.96ms | S4_Query=22.13ms) | Integrity=100.0% | Mem=11.21MB
+     Run 30/30: Total=103.32ms (S1_Anchor=65.90ms | S2_IO=11.28ms | S3_Hydr=6.13ms | S4_Query=19.87ms) | Integrity=100.0% | Mem=11.36MB
+
+--- [Exp1_Scalability] Arch: Centralized | Sensors: 3000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 55s... Ready.
+     Run  1/30: Total=111.64ms (S1_Anchor=77.82ms | S2_IO=0.00ms | S3_Hydr=1.43ms | S4_Query=32.23ms) | Integrity=100.0% | Mem=12.68MB
+     Run 10/30: Total=138.33ms (S1_Anchor=110.36ms | S2_IO=0.00ms | S3_Hydr=2.38ms | S4_Query=25.49ms) | Integrity=100.0% | Mem=12.77MB
+     Run 20/30: Total=146.91ms (S1_Anchor=118.80ms | S2_IO=0.00ms | S3_Hydr=2.45ms | S4_Query=25.55ms) | Integrity=100.0% | Mem=12.80MB
+     Run 30/30: Total=144.80ms (S1_Anchor=109.75ms | S2_IO=0.00ms | S3_Hydr=4.41ms | S4_Query=30.51ms) | Integrity=100.0% | Mem=12.83MB
+
+--- [Exp1_Scalability] Arch: Federated_1ISU | Sensors: 3000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=191.47ms (S1_Anchor=134.76ms | S2_IO=12.05ms | S3_Hydr=17.00ms | S4_Query=27.52ms) | Integrity=100.0% | Mem=13.59MB
+     Run 10/30: Total=134.58ms (S1_Anchor=89.29ms | S2_IO=12.36ms | S3_Hydr=12.78ms | S4_Query=19.49ms) | Integrity=100.0% | Mem=13.67MB
+     Run 20/30: Total=142.72ms (S1_Anchor=84.41ms | S2_IO=11.97ms | S3_Hydr=16.66ms | S4_Query=29.55ms) | Integrity=100.0% | Mem=13.65MB
+     Run 30/30: Total=136.71ms (S1_Anchor=74.61ms | S2_IO=12.19ms | S3_Hydr=18.23ms | S4_Query=31.52ms) | Integrity=100.0% | Mem=13.56MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=200.98ms (S1_Anchor=125.89ms | S2_IO=43.58ms | S3_Hydr=12.61ms | S4_Query=18.72ms) | Integrity=100.0% | Mem=14.01MB
+     Run 10/30: Total=241.33ms (S1_Anchor=157.56ms | S2_IO=40.86ms | S3_Hydr=13.77ms | S4_Query=28.53ms) | Integrity=100.0% | Mem=13.98MB
+     Run 20/30: Total=240.43ms (S1_Anchor=162.34ms | S2_IO=39.25ms | S3_Hydr=12.13ms | S4_Query=26.60ms) | Integrity=100.0% | Mem=14.00MB
+     Run 30/30: Total=242.34ms (S1_Anchor=157.48ms | S2_IO=40.83ms | S3_Hydr=13.50ms | S4_Query=30.38ms) | Integrity=100.0% | Mem=14.01MB
+
+--- [Exp1_Scalability] Arch: Federated_2ISU | Sensors: 3000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=190.23ms (S1_Anchor=135.01ms | S2_IO=11.65ms | S3_Hydr=15.18ms | S4_Query=28.29ms) | Integrity=100.0% | Mem=13.69MB
+     Run 10/30: Total=157.20ms (S1_Anchor=99.36ms | S2_IO=11.97ms | S3_Hydr=16.85ms | S4_Query=28.89ms) | Integrity=100.0% | Mem=13.77MB
+     Run 20/30: Total=157.29ms (S1_Anchor=94.57ms | S2_IO=12.23ms | S3_Hydr=13.47ms | S4_Query=36.87ms) | Integrity=100.0% | Mem=13.79MB
+     Run 30/30: Total=113.47ms (S1_Anchor=63.23ms | S2_IO=11.22ms | S3_Hydr=13.38ms | S4_Query=25.54ms) | Integrity=100.0% | Mem=13.57MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=197.41ms (S1_Anchor=129.06ms | S2_IO=25.76ms | S3_Hydr=9.48ms | S4_Query=32.95ms) | Integrity=100.0% | Mem=13.80MB
+     Run 10/30: Total=158.68ms (S1_Anchor=83.43ms | S2_IO=26.85ms | S3_Hydr=15.23ms | S4_Query=33.01ms) | Integrity=100.0% | Mem=13.71MB
+     Run 20/30: Total=150.48ms (S1_Anchor=74.18ms | S2_IO=32.16ms | S3_Hydr=16.47ms | S4_Query=27.57ms) | Integrity=100.0% | Mem=13.46MB
+     Run 30/30: Total=158.83ms (S1_Anchor=87.18ms | S2_IO=26.78ms | S3_Hydr=16.93ms | S4_Query=27.84ms) | Integrity=100.0% | Mem=13.73MB
+
+--- [Exp1_Scalability] Arch: Federated_4ISU | Sensors: 3000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=124.80ms (S1_Anchor=67.63ms | S2_IO=11.06ms | S3_Hydr=13.40ms | S4_Query=32.55ms) | Integrity=100.0% | Mem=13.68MB
+     Run 10/30: Total=136.49ms (S1_Anchor=78.84ms | S2_IO=12.54ms | S3_Hydr=12.84ms | S4_Query=32.12ms) | Integrity=100.0% | Mem=13.69MB
+     Run 20/30: Total=167.51ms (S1_Anchor=107.84ms | S2_IO=12.43ms | S3_Hydr=18.68ms | S4_Query=27.62ms) | Integrity=100.0% | Mem=13.74MB
+     Run 30/30: Total=136.84ms (S1_Anchor=93.82ms | S2_IO=9.91ms | S3_Hydr=7.81ms | S4_Query=25.22ms) | Integrity=100.0% | Mem=13.79MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=196.93ms (S1_Anchor=137.35ms | S2_IO=19.30ms | S3_Hydr=14.18ms | S4_Query=25.91ms) | Integrity=100.0% | Mem=13.98MB
+     Run 10/30: Total=163.38ms (S1_Anchor=98.18ms | S2_IO=19.95ms | S3_Hydr=14.84ms | S4_Query=30.31ms) | Integrity=100.0% | Mem=13.69MB
+     Run 20/30: Total=156.43ms (S1_Anchor=90.86ms | S2_IO=20.12ms | S3_Hydr=16.76ms | S4_Query=28.59ms) | Integrity=100.0% | Mem=13.90MB
+     Run 30/30: Total=140.44ms (S1_Anchor=74.99ms | S2_IO=19.45ms | S3_Hydr=15.59ms | S4_Query=30.31ms) | Integrity=100.0% | Mem=13.76MB
+
+--- [Exp1_Scalability] Arch: Federated_8ISU | Sensors: 3000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=209.07ms (S1_Anchor=159.32ms | S2_IO=11.26ms | S3_Hydr=12.27ms | S4_Query=26.11ms) | Integrity=100.0% | Mem=13.81MB
+     Run 10/30: Total=149.69ms (S1_Anchor=97.83ms | S2_IO=11.38ms | S3_Hydr=13.30ms | S4_Query=27.06ms) | Integrity=100.0% | Mem=13.65MB
+     Run 20/30: Total=141.79ms (S1_Anchor=89.82ms | S2_IO=11.35ms | S3_Hydr=13.27ms | S4_Query=27.24ms) | Integrity=100.0% | Mem=13.65MB
+     Run 30/30: Total=163.79ms (S1_Anchor=107.39ms | S2_IO=11.26ms | S3_Hydr=16.16ms | S4_Query=28.87ms) | Integrity=100.0% | Mem=13.65MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=183.52ms (S1_Anchor=128.98ms | S2_IO=15.68ms | S3_Hydr=17.41ms | S4_Query=21.35ms) | Integrity=100.0% | Mem=13.79MB
+     Run 10/30: Total=146.75ms (S1_Anchor=96.54ms | S2_IO=11.62ms | S3_Hydr=11.33ms | S4_Query=27.16ms) | Integrity=100.0% | Mem=13.96MB
+     Run 20/30: Total=141.62ms (S1_Anchor=79.01ms | S2_IO=14.22ms | S3_Hydr=16.47ms | S4_Query=31.77ms) | Integrity=100.0% | Mem=13.81MB
+     Run 30/30: Total=144.07ms (S1_Anchor=96.52ms | S2_IO=15.13ms | S3_Hydr=13.58ms | S4_Query=18.76ms) | Integrity=100.0% | Mem=13.80MB
+
+--- [Exp1_Scalability] Arch: Centralized | Sensors: 4000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 35s... Ready.
+     Run  1/30: Total=292.67ms (S1_Anchor=256.50ms | S2_IO=0.00ms | S3_Hydr=2.86ms | S4_Query=33.11ms) | Integrity=100.0% | Mem=19.46MB
+     Run 10/30: Total=289.86ms (S1_Anchor=246.50ms | S2_IO=0.00ms | S3_Hydr=4.06ms | S4_Query=39.16ms) | Integrity=100.0% | Mem=19.48MB
+     Run 20/30: Total=255.66ms (S1_Anchor=226.92ms | S2_IO=0.00ms | S3_Hydr=1.92ms | S4_Query=26.66ms) | Integrity=100.0% | Mem=19.88MB
+     Run 30/30: Total=347.74ms (S1_Anchor=298.65ms | S2_IO=0.00ms | S3_Hydr=2.19ms | S4_Query=46.73ms) | Integrity=100.0% | Mem=19.50MB
+
+--- [Exp1_Scalability] Arch: Federated_1ISU | Sensors: 4000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=192.67ms (S1_Anchor=123.43ms | S2_IO=13.82ms | S3_Hydr=17.95ms | S4_Query=37.37ms) | Integrity=100.0% | Mem=20.88MB
+     Run 10/30: Total=250.07ms (S1_Anchor=180.63ms | S2_IO=13.93ms | S3_Hydr=12.05ms | S4_Query=43.27ms) | Integrity=100.0% | Mem=20.62MB
+     Run 20/30: Total=249.87ms (S1_Anchor=173.30ms | S2_IO=12.65ms | S3_Hydr=18.29ms | S4_Query=45.40ms) | Integrity=100.0% | Mem=20.74MB
+     Run 30/30: Total=222.90ms (S1_Anchor=158.34ms | S2_IO=11.79ms | S3_Hydr=18.41ms | S4_Query=34.21ms) | Integrity=100.0% | Mem=20.68MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=186.88ms (S1_Anchor=88.49ms | S2_IO=46.74ms | S3_Hydr=15.92ms | S4_Query=35.64ms) | Integrity=100.0% | Mem=21.09MB
+     Run 10/30: Total=234.96ms (S1_Anchor=138.86ms | S2_IO=46.70ms | S3_Hydr=16.05ms | S4_Query=33.22ms) | Integrity=100.0% | Mem=21.07MB
+     Run 20/30: Total=243.11ms (S1_Anchor=141.23ms | S2_IO=44.17ms | S3_Hydr=17.28ms | S4_Query=40.18ms) | Integrity=100.0% | Mem=21.07MB
+     Run 30/30: Total=254.43ms (S1_Anchor=139.82ms | S2_IO=56.05ms | S3_Hydr=17.04ms | S4_Query=41.29ms) | Integrity=100.0% | Mem=21.07MB
+
+--- [Exp1_Scalability] Arch: Federated_2ISU | Sensors: 4000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=187.25ms (S1_Anchor=122.03ms | S2_IO=12.27ms | S3_Hydr=16.30ms | S4_Query=36.54ms) | Integrity=100.0% | Mem=20.84MB
+     Run 10/30: Total=262.46ms (S1_Anchor=181.05ms | S2_IO=12.45ms | S3_Hydr=20.95ms | S4_Query=47.79ms) | Integrity=100.0% | Mem=20.70MB
+     Run 20/30: Total=239.49ms (S1_Anchor=166.32ms | S2_IO=12.25ms | S3_Hydr=22.93ms | S4_Query=37.80ms) | Integrity=100.0% | Mem=20.72MB
+     Run 30/30: Total=232.03ms (S1_Anchor=178.97ms | S2_IO=12.16ms | S3_Hydr=16.73ms | S4_Query=24.07ms) | Integrity=100.0% | Mem=20.73MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=193.38ms (S1_Anchor=106.43ms | S2_IO=35.05ms | S3_Hydr=15.58ms | S4_Query=36.15ms) | Integrity=100.0% | Mem=20.83MB
+     Run 10/30: Total=247.25ms (S1_Anchor=157.15ms | S2_IO=31.74ms | S3_Hydr=15.96ms | S4_Query=42.14ms) | Integrity=100.0% | Mem=20.84MB
+     Run 20/30: Total=231.82ms (S1_Anchor=142.69ms | S2_IO=35.12ms | S3_Hydr=15.08ms | S4_Query=38.82ms) | Integrity=100.0% | Mem=20.81MB
+     Run 30/30: Total=248.85ms (S1_Anchor=169.53ms | S2_IO=32.04ms | S3_Hydr=15.06ms | S4_Query=32.09ms) | Integrity=100.0% | Mem=20.83MB
+
+--- [Exp1_Scalability] Arch: Federated_4ISU | Sensors: 4000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=198.20ms (S1_Anchor=120.66ms | S2_IO=11.90ms | S3_Hydr=17.50ms | S4_Query=47.86ms) | Integrity=100.0% | Mem=20.74MB
+     Run 10/30: Total=185.23ms (S1_Anchor=111.62ms | S2_IO=11.72ms | S3_Hydr=16.07ms | S4_Query=45.53ms) | Integrity=100.0% | Mem=20.74MB
+     Run 20/30: Total=269.86ms (S1_Anchor=195.01ms | S2_IO=13.64ms | S3_Hydr=16.23ms | S4_Query=44.79ms) | Integrity=100.0% | Mem=20.71MB
+     Run 30/30: Total=242.79ms (S1_Anchor=179.86ms | S2_IO=11.85ms | S3_Hydr=15.35ms | S4_Query=35.55ms) | Integrity=100.0% | Mem=20.85MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=209.07ms (S1_Anchor=116.62ms | S2_IO=28.98ms | S3_Hydr=15.28ms | S4_Query=47.97ms) | Integrity=100.0% | Mem=20.64MB
+     Run 10/30: Total=221.34ms (S1_Anchor=152.28ms | S2_IO=28.25ms | S3_Hydr=15.47ms | S4_Query=25.26ms) | Integrity=100.0% | Mem=20.64MB
+     Run 20/30: Total=231.43ms (S1_Anchor=167.16ms | S2_IO=23.00ms | S3_Hydr=14.59ms | S4_Query=26.59ms) | Integrity=100.0% | Mem=20.67MB
+     Run 30/30: Total=256.36ms (S1_Anchor=178.79ms | S2_IO=21.58ms | S3_Hydr=17.46ms | S4_Query=38.38ms) | Integrity=100.0% | Mem=20.83MB
+
+--- [Exp1_Scalability] Arch: Federated_8ISU | Sensors: 4000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=204.08ms (S1_Anchor=135.88ms | S2_IO=13.00ms | S3_Hydr=16.27ms | S4_Query=38.68ms) | Integrity=100.0% | Mem=20.67MB
+     Run 10/30: Total=258.13ms (S1_Anchor=185.22ms | S2_IO=12.84ms | S3_Hydr=18.07ms | S4_Query=41.82ms) | Integrity=100.0% | Mem=20.73MB
+     Run 20/30: Total=253.19ms (S1_Anchor=181.24ms | S2_IO=11.87ms | S3_Hydr=17.98ms | S4_Query=41.88ms) | Integrity=100.0% | Mem=21.00MB
+     Run 30/30: Total=245.83ms (S1_Anchor=177.78ms | S2_IO=11.16ms | S3_Hydr=14.67ms | S4_Query=41.98ms) | Integrity=100.0% | Mem=20.67MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=212.90ms (S1_Anchor=136.68ms | S2_IO=18.07ms | S3_Hydr=16.19ms | S4_Query=41.70ms) | Integrity=100.0% | Mem=20.79MB
+     Run 10/30: Total=241.49ms (S1_Anchor=173.24ms | S2_IO=14.66ms | S3_Hydr=16.30ms | S4_Query=37.16ms) | Integrity=100.0% | Mem=20.77MB
+     Run 20/30: Total=166.94ms (S1_Anchor=85.84ms | S2_IO=16.86ms | S3_Hydr=17.21ms | S4_Query=46.78ms) | Integrity=100.0% | Mem=20.69MB
+     Run 30/30: Total=250.15ms (S1_Anchor=175.62ms | S2_IO=16.91ms | S3_Hydr=15.61ms | S4_Query=41.77ms) | Integrity=100.0% | Mem=20.77MB
+
+--- [Exp1_Scalability] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 55s... Ready.
+     Run  1/30: Total=333.24ms (S1_Anchor=279.15ms | S2_IO=0.00ms | S3_Hydr=7.35ms | S4_Query=46.60ms) | Integrity=100.0% | Mem=22.04MB
+     Run 10/30: Total=457.99ms (S1_Anchor=407.73ms | S2_IO=0.00ms | S3_Hydr=2.59ms | S4_Query=47.46ms) | Integrity=100.0% | Mem=22.10MB
+     Run 20/30: Total=338.27ms (S1_Anchor=299.23ms | S2_IO=0.00ms | S3_Hydr=3.35ms | S4_Query=35.55ms) | Integrity=100.0% | Mem=22.14MB
+     Run 30/30: Total=254.07ms (S1_Anchor=212.27ms | S2_IO=0.00ms | S3_Hydr=2.14ms | S4_Query=39.47ms) | Integrity=100.0% | Mem=22.17MB
+
+--- [Exp1_Scalability] Arch: Federated_1ISU | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=192.70ms (S1_Anchor=116.59ms | S2_IO=13.12ms | S3_Hydr=22.53ms | S4_Query=40.30ms) | Integrity=100.0% | Mem=23.63MB
+     Run 10/30: Total=262.58ms (S1_Anchor=182.87ms | S2_IO=12.76ms | S3_Hydr=27.08ms | S4_Query=39.74ms) | Integrity=100.0% | Mem=23.61MB
+     Run 20/30: Total=253.92ms (S1_Anchor=164.73ms | S2_IO=12.55ms | S3_Hydr=26.96ms | S4_Query=49.46ms) | Integrity=100.0% | Mem=23.65MB
+     Run 30/30: Total=240.04ms (S1_Anchor=151.65ms | S2_IO=18.45ms | S3_Hydr=20.86ms | S4_Query=48.83ms) | Integrity=100.0% | Mem=23.68MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=296.28ms (S1_Anchor=172.92ms | S2_IO=54.67ms | S3_Hydr=19.56ms | S4_Query=48.92ms) | Integrity=100.0% | Mem=24.54MB
+     Run 10/30: Total=260.01ms (S1_Anchor=126.67ms | S2_IO=63.34ms | S3_Hydr=19.86ms | S4_Query=49.94ms) | Integrity=100.0% | Mem=24.55MB
+     Run 20/30: Total=249.91ms (S1_Anchor=138.85ms | S2_IO=55.18ms | S3_Hydr=19.06ms | S4_Query=36.67ms) | Integrity=100.0% | Mem=24.53MB
+     Run 30/30: Total=250.87ms (S1_Anchor=129.92ms | S2_IO=57.73ms | S3_Hydr=21.56ms | S4_Query=41.55ms) | Integrity=100.0% | Mem=24.57MB
+
+--- [Exp1_Scalability] Arch: Federated_2ISU | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 35s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=251.61ms (S1_Anchor=171.80ms | S2_IO=12.36ms | S3_Hydr=25.12ms | S4_Query=42.16ms) | Integrity=100.0% | Mem=23.77MB
+     Run 10/30: Total=241.15ms (S1_Anchor=167.85ms | S2_IO=12.69ms | S3_Hydr=23.11ms | S4_Query=37.35ms) | Integrity=100.0% | Mem=23.68MB
+     Run 20/30: Total=264.92ms (S1_Anchor=180.73ms | S2_IO=13.70ms | S3_Hydr=21.84ms | S4_Query=48.43ms) | Integrity=100.0% | Mem=23.88MB
+     Run 30/30: Total=221.36ms (S1_Anchor=145.74ms | S2_IO=12.89ms | S3_Hydr=23.32ms | S4_Query=39.23ms) | Integrity=100.0% | Mem=23.77MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=289.40ms (S1_Anchor=198.33ms | S2_IO=39.38ms | S3_Hydr=16.14ms | S4_Query=35.36ms) | Integrity=100.0% | Mem=24.09MB
+     Run 10/30: Total=248.56ms (S1_Anchor=150.97ms | S2_IO=37.35ms | S3_Hydr=12.84ms | S4_Query=47.15ms) | Integrity=100.0% | Mem=24.40MB
+     Run 20/30: Total=345.47ms (S1_Anchor=249.18ms | S2_IO=34.39ms | S3_Hydr=19.98ms | S4_Query=41.61ms) | Integrity=100.0% | Mem=24.06MB
+     Run 30/30: Total=254.29ms (S1_Anchor=154.63ms | S2_IO=39.34ms | S3_Hydr=22.57ms | S4_Query=37.63ms) | Integrity=100.0% | Mem=24.11MB
+
+--- [Exp1_Scalability] Arch: Federated_4ISU | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=297.12ms (S1_Anchor=226.18ms | S2_IO=12.14ms | S3_Hydr=23.57ms | S4_Query=35.10ms) | Integrity=100.0% | Mem=23.68MB
+     Run 10/30: Total=248.35ms (S1_Anchor=168.74ms | S2_IO=11.98ms | S3_Hydr=19.55ms | S4_Query=47.87ms) | Integrity=100.0% | Mem=23.71MB
+     Run 20/30: Total=256.46ms (S1_Anchor=177.81ms | S2_IO=12.33ms | S3_Hydr=18.83ms | S4_Query=47.30ms) | Integrity=100.0% | Mem=23.71MB
+     Run 30/30: Total=365.33ms (S1_Anchor=285.83ms | S2_IO=11.78ms | S3_Hydr=20.22ms | S4_Query=47.31ms) | Integrity=100.0% | Mem=23.82MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=300.88ms (S1_Anchor=202.89ms | S2_IO=26.22ms | S3_Hydr=18.09ms | S4_Query=53.49ms) | Integrity=100.0% | Mem=24.00MB
+     Run 10/30: Total=254.49ms (S1_Anchor=160.57ms | S2_IO=26.24ms | S3_Hydr=18.54ms | S4_Query=48.89ms) | Integrity=100.0% | Mem=23.97MB
+     Run 20/30: Total=250.37ms (S1_Anchor=150.56ms | S2_IO=28.77ms | S3_Hydr=21.88ms | S4_Query=48.97ms) | Integrity=100.0% | Mem=23.98MB
+     Run 30/30: Total=349.14ms (S1_Anchor=250.22ms | S2_IO=25.28ms | S3_Hydr=17.78ms | S4_Query=55.68ms) | Integrity=100.0% | Mem=23.71MB
+
+--- [Exp1_Scalability] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 30s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=193.25ms (S1_Anchor=114.98ms | S2_IO=11.94ms | S3_Hydr=21.13ms | S4_Query=45.03ms) | Integrity=100.0% | Mem=23.79MB
+     Run 10/30: Total=261.67ms (S1_Anchor=181.85ms | S2_IO=13.03ms | S3_Hydr=21.33ms | S4_Query=45.29ms) | Integrity=100.0% | Mem=23.60MB
+     Run 20/30: Total=329.76ms (S1_Anchor=252.21ms | S2_IO=11.92ms | S3_Hydr=23.67ms | S4_Query=41.76ms) | Integrity=100.0% | Mem=23.58MB
+     Run 30/30: Total=245.76ms (S1_Anchor=165.90ms | S2_IO=11.11ms | S3_Hydr=18.97ms | S4_Query=49.57ms) | Integrity=100.0% | Mem=23.65MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=201.14ms (S1_Anchor=111.09ms | S2_IO=18.31ms | S3_Hydr=18.24ms | S4_Query=53.30ms) | Integrity=100.0% | Mem=24.12MB
+     Run 10/30: Total=251.71ms (S1_Anchor=155.48ms | S2_IO=24.01ms | S3_Hydr=24.93ms | S4_Query=47.09ms) | Integrity=100.0% | Mem=23.93MB
+     Run 20/30: Total=347.74ms (S1_Anchor=264.22ms | S2_IO=18.42ms | S3_Hydr=24.59ms | S4_Query=40.35ms) | Integrity=100.0% | Mem=24.06MB
+     Run 30/30: Total=245.73ms (S1_Anchor=162.91ms | S2_IO=16.96ms | S3_Hydr=24.23ms | S4_Query=41.49ms) | Integrity=100.0% | Mem=24.23MB
+
+[Sub-Experiment 1 Complete] Results saved to: query/output/2026-10-27_12-04-42/exp1_scalability.csv
+
+======================================================================
+SUB-EXPERIMENT 2: QUERY COMPLEXITY (Q1, Q2, Q3) & CONCURRENCY
+======================================================================
+
+--- [Exp2_Complexity_Concurrency] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q1_Selective | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 60s... Ready.
+     Run  1/30: Total=54.30ms (S1_Anchor=40.85ms | S2_IO=0.00ms | S3_Hydr=0.94ms | S4_Query=11.96ms) | Integrity=100.0% | Mem=7.43MB
+     Run 10/30: Total=55.74ms (S1_Anchor=41.53ms | S2_IO=0.00ms | S3_Hydr=1.07ms | S4_Query=12.53ms) | Integrity=100.0% | Mem=7.48MB
+     Run 20/30: Total=54.48ms (S1_Anchor=39.79ms | S2_IO=0.00ms | S3_Hydr=0.91ms | S4_Query=13.09ms) | Integrity=100.0% | Mem=7.46MB
+     Run 30/30: Total=54.51ms (S1_Anchor=38.70ms | S2_IO=0.00ms | S3_Hydr=0.92ms | S4_Query=14.00ms) | Integrity=100.0% | Mem=7.46MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q1_Selective | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=58.22ms (S1_Anchor=33.27ms | S2_IO=7.00ms | S3_Hydr=7.03ms | S4_Query=10.52ms) | Integrity=100.0% | Mem=7.86MB
+     Run 10/30: Total=61.22ms (S1_Anchor=39.36ms | S2_IO=7.70ms | S3_Hydr=4.59ms | S4_Query=9.12ms) | Integrity=100.0% | Mem=7.86MB
+     Run 20/30: Total=62.13ms (S1_Anchor=36.89ms | S2_IO=7.78ms | S3_Hydr=4.63ms | S4_Query=12.24ms) | Integrity=100.0% | Mem=7.93MB
+     Run 30/30: Total=57.26ms (S1_Anchor=34.32ms | S2_IO=7.97ms | S3_Hydr=4.58ms | S4_Query=9.93ms) | Integrity=100.0% | Mem=7.88MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q1_Selective | Conc: 5 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 55s... Ready.
+     Run  1/30: Total=200.84ms (S1_Anchor=182.19ms | S2_IO=0.00ms | S3_Hydr=1.49ms | S4_Query=16.62ms) | Integrity=100.0% | Mem=7.45MB
+     Run 10/30: Total=270.61ms (S1_Anchor=254.67ms | S2_IO=0.00ms | S3_Hydr=1.86ms | S4_Query=13.47ms) | Integrity=100.0% | Mem=7.45MB
+     Run 20/30: Total=240.81ms (S1_Anchor=220.98ms | S2_IO=0.00ms | S3_Hydr=2.19ms | S4_Query=16.57ms) | Integrity=100.0% | Mem=7.46MB
+     Run 30/30: Total=173.60ms (S1_Anchor=157.26ms | S2_IO=0.00ms | S3_Hydr=1.69ms | S4_Query=14.19ms) | Integrity=100.0% | Mem=7.45MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q1_Selective | Conc: 5 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 35s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=97.93ms (S1_Anchor=65.30ms | S2_IO=7.27ms | S3_Hydr=9.43ms | S4_Query=15.44ms) | Integrity=100.0% | Mem=7.90MB
+     Run 10/30: Total=139.27ms (S1_Anchor=113.90ms | S2_IO=7.53ms | S3_Hydr=5.95ms | S4_Query=11.38ms) | Integrity=100.0% | Mem=7.88MB
+     Run 20/30: Total=132.85ms (S1_Anchor=101.42ms | S2_IO=7.86ms | S3_Hydr=7.24ms | S4_Query=15.65ms) | Integrity=100.0% | Mem=7.86MB
+     Run 30/30: Total=172.06ms (S1_Anchor=143.97ms | S2_IO=7.03ms | S3_Hydr=7.08ms | S4_Query=13.51ms) | Integrity=100.0% | Mem=7.92MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q1_Selective | Conc: 10 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 60s... Ready.
+     Run  1/30: Total=624.66ms (S1_Anchor=604.54ms | S2_IO=0.00ms | S3_Hydr=2.12ms | S4_Query=17.30ms) | Integrity=100.0% | Mem=7.46MB
+     Run 10/30: Total=539.49ms (S1_Anchor=526.20ms | S2_IO=0.00ms | S3_Hydr=1.30ms | S4_Query=11.55ms) | Integrity=100.0% | Mem=7.46MB
+     Run 20/30: Total=612.15ms (S1_Anchor=594.41ms | S2_IO=0.00ms | S3_Hydr=2.48ms | S4_Query=14.77ms) | Integrity=100.0% | Mem=7.46MB
+     Run 30/30: Total=544.13ms (S1_Anchor=525.97ms | S2_IO=0.00ms | S3_Hydr=1.98ms | S4_Query=15.40ms) | Integrity=100.0% | Mem=7.47MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q1_Selective | Conc: 10 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 50s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=308.59ms (S1_Anchor=271.44ms | S2_IO=8.38ms | S3_Hydr=9.80ms | S4_Query=18.38ms) | Integrity=100.0% | Mem=7.91MB
+     Run 10/30: Total=386.29ms (S1_Anchor=305.64ms | S2_IO=28.56ms | S3_Hydr=22.94ms | S4_Query=28.70ms) | Integrity=100.0% | Mem=7.88MB
+     Run 20/30: Total=382.99ms (S1_Anchor=353.71ms | S2_IO=7.74ms | S3_Hydr=7.48ms | S4_Query=13.33ms) | Integrity=100.0% | Mem=7.87MB
+     Run 30/30: Total=377.45ms (S1_Anchor=347.45ms | S2_IO=8.04ms | S3_Hydr=7.17ms | S4_Query=14.27ms) | Integrity=100.0% | Mem=7.88MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q1_Selective | Conc: 20 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 70s... Ready.
+     Run  1/30: Total=1126.30ms (S1_Anchor=1104.46ms | S2_IO=0.00ms | S3_Hydr=2.53ms | S4_Query=18.81ms) | Integrity=100.0% | Mem=7.47MB
+     Run 10/30: Total=1173.03ms (S1_Anchor=1153.60ms | S2_IO=0.00ms | S3_Hydr=3.38ms | S4_Query=15.38ms) | Integrity=100.0% | Mem=7.46MB
+     Run 20/30: Total=1156.59ms (S1_Anchor=1140.19ms | S2_IO=0.00ms | S3_Hydr=2.29ms | S4_Query=13.58ms) | Integrity=100.0% | Mem=7.45MB
+     Run 30/30: Total=1046.73ms (S1_Anchor=1021.17ms | S2_IO=0.00ms | S3_Hydr=4.29ms | S4_Query=20.39ms) | Integrity=100.0% | Mem=7.45MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q1_Selective | Conc: 20 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=762.59ms (S1_Anchor=731.18ms | S2_IO=8.87ms | S3_Hydr=6.83ms | S4_Query=15.04ms) | Integrity=100.0% | Mem=7.90MB
+     Run 10/30: Total=738.37ms (S1_Anchor=703.34ms | S2_IO=8.69ms | S3_Hydr=8.27ms | S4_Query=17.45ms) | Integrity=100.0% | Mem=7.91MB
+     Run 20/30: Total=770.87ms (S1_Anchor=735.13ms | S2_IO=8.38ms | S3_Hydr=11.17ms | S4_Query=15.69ms) | Integrity=100.0% | Mem=7.89MB
+     Run 30/30: Total=865.80ms (S1_Anchor=833.98ms | S2_IO=8.02ms | S3_Hydr=7.91ms | S4_Query=15.14ms) | Integrity=100.0% | Mem=7.88MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q2_Filtering | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 55s... Ready.
+     Run  1/30: Total=52.26ms (S1_Anchor=42.54ms | S2_IO=0.00ms | S3_Hydr=0.98ms | S4_Query=8.47ms) | Integrity=100.0% | Mem=8.10MB
+     Run 10/30: Total=58.05ms (S1_Anchor=42.58ms | S2_IO=0.00ms | S3_Hydr=0.71ms | S4_Query=14.40ms) | Integrity=100.0% | Mem=8.11MB
+     Run 20/30: Total=60.06ms (S1_Anchor=44.77ms | S2_IO=0.00ms | S3_Hydr=0.90ms | S4_Query=14.03ms) | Integrity=100.0% | Mem=8.11MB
+     Run 30/30: Total=59.29ms (S1_Anchor=43.79ms | S2_IO=0.00ms | S3_Hydr=1.06ms | S4_Query=14.10ms) | Integrity=100.0% | Mem=8.15MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q2_Filtering | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 25s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=57.73ms (S1_Anchor=34.65ms | S2_IO=8.67ms | S3_Hydr=5.03ms | S4_Query=9.14ms) | Integrity=100.0% | Mem=8.65MB
+     Run 10/30: Total=71.17ms (S1_Anchor=41.04ms | S2_IO=8.56ms | S3_Hydr=5.75ms | S4_Query=15.45ms) | Integrity=100.0% | Mem=8.65MB
+     Run 20/30: Total=59.96ms (S1_Anchor=35.53ms | S2_IO=8.44ms | S3_Hydr=5.62ms | S4_Query=10.12ms) | Integrity=100.0% | Mem=8.80MB
+     Run 30/30: Total=64.54ms (S1_Anchor=37.00ms | S2_IO=8.74ms | S3_Hydr=3.18ms | S4_Query=15.26ms) | Integrity=100.0% | Mem=8.72MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q2_Filtering | Conc: 5 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 60s... Ready.
+     Run  1/30: Total=415.94ms (S1_Anchor=397.49ms | S2_IO=0.00ms | S3_Hydr=1.46ms | S4_Query=16.38ms) | Integrity=100.0% | Mem=8.13MB
+     Run 10/30: Total=243.30ms (S1_Anchor=222.85ms | S2_IO=0.00ms | S3_Hydr=2.30ms | S4_Query=17.85ms) | Integrity=100.0% | Mem=8.13MB
+     Run 20/30: Total=350.45ms (S1_Anchor=332.65ms | S2_IO=0.00ms | S3_Hydr=1.69ms | S4_Query=15.32ms) | Integrity=100.0% | Mem=8.14MB
+     Run 30/30: Total=349.99ms (S1_Anchor=329.60ms | S2_IO=0.00ms | S3_Hydr=2.75ms | S4_Query=17.13ms) | Integrity=100.0% | Mem=8.13MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q2_Filtering | Conc: 5 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=203.93ms (S1_Anchor=169.91ms | S2_IO=8.56ms | S3_Hydr=10.51ms | S4_Query=14.65ms) | Integrity=100.0% | Mem=8.70MB
+     Run 10/30: Total=338.39ms (S1_Anchor=305.19ms | S2_IO=8.78ms | S3_Hydr=9.64ms | S4_Query=14.48ms) | Integrity=100.0% | Mem=8.68MB
+     Run 20/30: Total=256.05ms (S1_Anchor=217.88ms | S2_IO=8.94ms | S3_Hydr=10.10ms | S4_Query=18.79ms) | Integrity=100.0% | Mem=8.76MB
+     Run 30/30: Total=242.26ms (S1_Anchor=207.13ms | S2_IO=9.21ms | S3_Hydr=9.25ms | S4_Query=16.37ms) | Integrity=100.0% | Mem=8.70MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q2_Filtering | Conc: 10 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+     Run  1/30: Total=776.82ms (S1_Anchor=755.34ms | S2_IO=0.00ms | S3_Hydr=2.21ms | S4_Query=18.69ms) | Integrity=100.0% | Mem=8.13MB
+     Run 10/30: Total=748.00ms (S1_Anchor=728.86ms | S2_IO=0.00ms | S3_Hydr=2.45ms | S4_Query=16.25ms) | Integrity=100.0% | Mem=8.14MB
+     Run 20/30: Total=625.58ms (S1_Anchor=610.46ms | S2_IO=0.00ms | S3_Hydr=1.51ms | S4_Query=13.23ms) | Integrity=100.0% | Mem=8.15MB
+     Run 30/30: Total=747.47ms (S1_Anchor=724.41ms | S2_IO=0.00ms | S3_Hydr=1.82ms | S4_Query=20.56ms) | Integrity=100.0% | Mem=8.12MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q2_Filtering | Conc: 10 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 35s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=487.33ms (S1_Anchor=440.55ms | S2_IO=12.33ms | S3_Hydr=11.67ms | S4_Query=22.39ms) | Integrity=100.0% | Mem=8.68MB
+     Run 10/30: Total=431.70ms (S1_Anchor=391.26ms | S2_IO=15.65ms | S3_Hydr=7.61ms | S4_Query=16.90ms) | Integrity=100.0% | Mem=8.72MB
+     Run 20/30: Total=629.08ms (S1_Anchor=590.55ms | S2_IO=8.99ms | S3_Hydr=10.73ms | S4_Query=18.44ms) | Integrity=100.0% | Mem=8.71MB
+     Run 30/30: Total=481.19ms (S1_Anchor=444.91ms | S2_IO=8.69ms | S3_Hydr=9.67ms | S4_Query=17.59ms) | Integrity=100.0% | Mem=8.73MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q2_Filtering | Conc: 20 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+     Run  1/30: Total=1496.20ms (S1_Anchor=1466.05ms | S2_IO=0.00ms | S3_Hydr=4.91ms | S4_Query=24.73ms) | Integrity=100.0% | Mem=8.14MB
+     Run 10/30: Total=1508.39ms (S1_Anchor=1488.13ms | S2_IO=0.00ms | S3_Hydr=1.89ms | S4_Query=17.95ms) | Integrity=100.0% | Mem=8.13MB
+     Run 20/30: Total=1479.94ms (S1_Anchor=1458.85ms | S2_IO=0.00ms | S3_Hydr=2.28ms | S4_Query=18.41ms) | Integrity=100.0% | Mem=8.13MB
+     Run 30/30: Total=1408.82ms (S1_Anchor=1386.00ms | S2_IO=0.00ms | S3_Hydr=2.89ms | S4_Query=19.62ms) | Integrity=100.0% | Mem=8.14MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q2_Filtering | Conc: 20 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 35s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=1179.31ms (S1_Anchor=1135.00ms | S2_IO=9.63ms | S3_Hydr=13.52ms | S4_Query=20.67ms) | Integrity=100.0% | Mem=8.70MB
+     Run 10/30: Total=1068.05ms (S1_Anchor=1019.15ms | S2_IO=9.60ms | S3_Hydr=13.82ms | S4_Query=25.20ms) | Integrity=100.0% | Mem=8.72MB
+     Run 20/30: Total=1134.32ms (S1_Anchor=1092.71ms | S2_IO=9.03ms | S3_Hydr=11.88ms | S4_Query=20.42ms) | Integrity=100.0% | Mem=8.71MB
+     Run 30/30: Total=1202.04ms (S1_Anchor=1160.96ms | S2_IO=9.28ms | S3_Hydr=11.09ms | S4_Query=20.41ms) | Integrity=100.0% | Mem=8.71MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+     Run  1/30: Total=323.45ms (S1_Anchor=272.71ms | S2_IO=0.00ms | S3_Hydr=7.24ms | S4_Query=43.30ms) | Integrity=100.0% | Mem=22.12MB
+     Run 10/30: Total=303.57ms (S1_Anchor=278.73ms | S2_IO=0.00ms | S3_Hydr=2.61ms | S4_Query=22.09ms) | Integrity=100.0% | Mem=22.13MB
+     Run 20/30: Total=304.79ms (S1_Anchor=251.27ms | S2_IO=0.00ms | S3_Hydr=7.15ms | S4_Query=46.00ms) | Integrity=100.0% | Mem=22.04MB
+     Run 30/30: Total=349.26ms (S1_Anchor=302.33ms | S2_IO=0.00ms | S3_Hydr=3.65ms | S4_Query=43.12ms) | Integrity=100.0% | Mem=22.10MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=307.61ms (S1_Anchor=238.34ms | S2_IO=12.11ms | S3_Hydr=20.08ms | S4_Query=36.86ms) | Integrity=100.0% | Mem=23.66MB
+     Run 10/30: Total=267.20ms (S1_Anchor=179.48ms | S2_IO=12.63ms | S3_Hydr=26.61ms | S4_Query=48.21ms) | Integrity=100.0% | Mem=23.61MB
+     Run 20/30: Total=253.98ms (S1_Anchor=168.08ms | S2_IO=12.21ms | S3_Hydr=21.80ms | S4_Query=51.68ms) | Integrity=100.0% | Mem=23.69MB
+     Run 30/30: Total=266.05ms (S1_Anchor=183.07ms | S2_IO=11.54ms | S3_Hydr=21.68ms | S4_Query=49.55ms) | Integrity=100.0% | Mem=23.55MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 5 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 35s... Ready.
+     Run  1/30: Total=1362.38ms (S1_Anchor=1311.58ms | S2_IO=0.00ms | S3_Hydr=4.06ms | S4_Query=46.57ms) | Integrity=100.0% | Mem=22.06MB
+     Run 10/30: Total=1297.52ms (S1_Anchor=1239.18ms | S2_IO=0.00ms | S3_Hydr=5.80ms | S4_Query=52.35ms) | Integrity=100.0% | Mem=22.06MB
+     Run 20/30: Total=1428.88ms (S1_Anchor=1363.66ms | S2_IO=0.00ms | S3_Hydr=8.73ms | S4_Query=56.30ms) | Integrity=100.0% | Mem=22.11MB
+     Run 30/30: Total=1226.84ms (S1_Anchor=1180.44ms | S2_IO=0.00ms | S3_Hydr=5.62ms | S4_Query=40.31ms) | Integrity=100.0% | Mem=22.06MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 5 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=910.66ms (S1_Anchor=813.10ms | S2_IO=29.10ms | S3_Hydr=23.09ms | S4_Query=45.17ms) | Integrity=100.0% | Mem=23.71MB
+     Run 10/30: Total=826.99ms (S1_Anchor=729.80ms | S2_IO=11.98ms | S3_Hydr=27.80ms | S4_Query=57.24ms) | Integrity=100.0% | Mem=23.61MB
+     Run 20/30: Total=789.36ms (S1_Anchor=703.08ms | S2_IO=12.26ms | S3_Hydr=26.32ms | S4_Query=47.46ms) | Integrity=100.0% | Mem=23.59MB
+     Run 30/30: Total=732.16ms (S1_Anchor=634.51ms | S2_IO=12.61ms | S3_Hydr=27.68ms | S4_Query=57.16ms) | Integrity=100.0% | Mem=23.62MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 10 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+     Run  1/30: Total=3082.62ms (S1_Anchor=3029.46ms | S2_IO=0.00ms | S3_Hydr=6.04ms | S4_Query=46.63ms) | Integrity=100.0% | Mem=22.09MB
+     Run 10/30: Total=2597.82ms (S1_Anchor=2534.90ms | S2_IO=0.00ms | S3_Hydr=7.54ms | S4_Query=54.89ms) | Integrity=100.0% | Mem=22.10MB
+     Run 20/30: Total=3393.36ms (S1_Anchor=3335.76ms | S2_IO=0.00ms | S3_Hydr=5.87ms | S4_Query=51.41ms) | Integrity=100.0% | Mem=22.05MB
+     Run 30/30: Total=3217.92ms (S1_Anchor=3167.24ms | S2_IO=0.00ms | S3_Hydr=4.33ms | S4_Query=46.20ms) | Integrity=100.0% | Mem=22.09MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 10 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=1864.95ms (S1_Anchor=1752.17ms | S2_IO=13.70ms | S3_Hydr=35.77ms | S4_Query=63.03ms) | Integrity=100.0% | Mem=23.67MB
+     Run 10/30: Total=1495.26ms (S1_Anchor=1394.00ms | S2_IO=12.69ms | S3_Hydr=28.49ms | S4_Query=59.85ms) | Integrity=100.0% | Mem=23.61MB
+     Run 20/30: Total=2142.89ms (S1_Anchor=2041.80ms | S2_IO=13.59ms | S3_Hydr=31.16ms | S4_Query=56.06ms) | Integrity=100.0% | Mem=23.64MB
+     Run 30/30: Total=1997.42ms (S1_Anchor=1845.34ms | S2_IO=76.51ms | S3_Hydr=25.29ms | S4_Query=50.11ms) | Integrity=100.0% | Mem=23.65MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Centralized | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 20 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 40s... Ready.
+     Run  1/30: Total=5171.51ms (S1_Anchor=5104.18ms | S2_IO=0.00ms | S3_Hydr=8.84ms | S4_Query=58.34ms) | Integrity=100.0% | Mem=22.08MB
+     Run 10/30: Total=6450.08ms (S1_Anchor=6393.79ms | S2_IO=0.00ms | S3_Hydr=4.80ms | S4_Query=51.23ms) | Integrity=100.0% | Mem=22.10MB
+     Run 20/30: Total=6871.56ms (S1_Anchor=6805.83ms | S2_IO=0.00ms | S3_Hydr=7.42ms | S4_Query=58.12ms) | Integrity=100.0% | Mem=22.07MB
+     Run 30/30: Total=7141.04ms (S1_Anchor=7079.75ms | S2_IO=0.00ms | S3_Hydr=6.53ms | S4_Query=54.60ms) | Integrity=100.0% | Mem=22.07MB
+
+--- [Exp2_Complexity_Concurrency] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 20 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 50s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=4996.38ms (S1_Anchor=4805.31ms | S2_IO=106.60ms | S3_Hydr=28.11ms | S4_Query=56.14ms) | Integrity=100.0% | Mem=23.66MB
+     Run 10/30: Total=4736.78ms (S1_Anchor=4623.81ms | S2_IO=31.45ms | S3_Hydr=24.28ms | S4_Query=57.01ms) | Integrity=100.0% | Mem=23.56MB
+     Run 20/30: Total=4646.40ms (S1_Anchor=4552.45ms | S2_IO=23.61ms | S3_Hydr=20.04ms | S4_Query=49.91ms) | Integrity=100.0% | Mem=23.64MB
+     Run 30/30: Total=4897.87ms (S1_Anchor=4773.17ms | S2_IO=42.44ms | S3_Hydr=26.23ms | S4_Query=55.70ms) | Integrity=100.0% | Mem=23.60MB
+
+[Sub-Experiment 2 Complete] Results saved to: query/output/2026-10-27_12-04-42/exp2_complexity_concurrency.csv
+
+======================================================================
+SUB-EXPERIMENT 3: DATA PARTITION SKEW (UNIFORM vs SKEWED PARTITIONS)
+======================================================================
+
+--- [Exp3_Skew] Arch: Federated_8ISU | Sensors: 5000 | Part: Uniform | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 35s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=190.54ms (S1_Anchor=109.34ms | S2_IO=12.10ms | S3_Hydr=20.38ms | S4_Query=48.46ms) | Integrity=100.0% | Mem=23.63MB
+     Run 10/30: Total=262.48ms (S1_Anchor=186.44ms | S2_IO=12.18ms | S3_Hydr=21.75ms | S4_Query=41.82ms) | Integrity=100.0% | Mem=23.66MB
+     Run 20/30: Total=344.58ms (S1_Anchor=275.37ms | S2_IO=11.17ms | S3_Hydr=18.54ms | S4_Query=39.36ms) | Integrity=100.0% | Mem=23.59MB
+     Run 30/30: Total=217.90ms (S1_Anchor=149.48ms | S2_IO=12.28ms | S3_Hydr=17.82ms | S4_Query=38.16ms) | Integrity=100.0% | Mem=23.61MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=253.50ms (S1_Anchor=171.71ms | S2_IO=20.78ms | S3_Hydr=14.08ms | S4_Query=46.60ms) | Integrity=100.0% | Mem=23.80MB
+     Run 10/30: Total=268.81ms (S1_Anchor=179.32ms | S2_IO=19.29ms | S3_Hydr=25.47ms | S4_Query=44.54ms) | Integrity=100.0% | Mem=24.08MB
+     Run 20/30: Total=363.60ms (S1_Anchor=279.71ms | S2_IO=21.19ms | S3_Hydr=23.72ms | S4_Query=37.97ms) | Integrity=100.0% | Mem=23.81MB
+     Run 30/30: Total=233.25ms (S1_Anchor=154.59ms | S2_IO=17.18ms | S3_Hydr=18.97ms | S4_Query=42.30ms) | Integrity=100.0% | Mem=24.10MB
+
+--- [Exp3_Skew] Arch: Federated_8ISU | Sensors: 5000 | Part: ModerateSkew | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=190.37ms (S1_Anchor=101.61ms | S2_IO=11.88ms | S3_Hydr=22.14ms | S4_Query=54.46ms) | Integrity=100.0% | Mem=23.61MB
+     Run 10/30: Total=236.68ms (S1_Anchor=155.19ms | S2_IO=12.06ms | S3_Hydr=17.87ms | S4_Query=51.27ms) | Integrity=100.0% | Mem=23.57MB
+     Run 20/30: Total=353.53ms (S1_Anchor=275.35ms | S2_IO=12.45ms | S3_Hydr=20.51ms | S4_Query=45.05ms) | Integrity=100.0% | Mem=23.59MB
+     Run 30/30: Total=281.98ms (S1_Anchor=160.48ms | S2_IO=48.42ms | S3_Hydr=27.99ms | S4_Query=44.81ms) | Integrity=100.0% | Mem=23.83MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=322.56ms (S1_Anchor=214.88ms | S2_IO=32.07ms | S3_Hydr=26.61ms | S4_Query=48.70ms) | Integrity=100.0% | Mem=24.09MB
+     Run 10/30: Total=245.71ms (S1_Anchor=136.23ms | S2_IO=38.70ms | S3_Hydr=20.99ms | S4_Query=49.53ms) | Integrity=100.0% | Mem=24.23MB
+     Run 20/30: Total=372.80ms (S1_Anchor=264.34ms | S2_IO=35.51ms | S3_Hydr=27.00ms | S4_Query=45.77ms) | Integrity=100.0% | Mem=24.21MB
+     Run 30/30: Total=244.96ms (S1_Anchor=144.43ms | S2_IO=34.54ms | S3_Hydr=14.83ms | S4_Query=50.94ms) | Integrity=100.0% | Mem=24.15MB
+
+--- [Exp3_Skew] Arch: Federated_8ISU | Sensors: 5000 | Part: HotspotSkew | Query: Q3_Inference | Conc: 1 ---
+   > Setting up multi-hop Thing topology (hasChild) & state... idle after 45s... Ready.
+   > Sub-batch: 250 (0 = one call per ISU)
+     Run  1/30: Total=232.39ms (S1_Anchor=101.12ms | S2_IO=55.47ms | S3_Hydr=18.76ms | S4_Query=56.81ms) | Integrity=100.0% | Mem=23.68MB
+     Run 10/30: Total=259.84ms (S1_Anchor=184.76ms | S2_IO=12.20ms | S3_Hydr=22.43ms | S4_Query=40.28ms) | Integrity=100.0% | Mem=23.50MB
+     Run 20/30: Total=333.18ms (S1_Anchor=249.91ms | S2_IO=12.34ms | S3_Hydr=21.21ms | S4_Query=49.47ms) | Integrity=100.0% | Mem=23.53MB
+     Run 30/30: Total=235.35ms (S1_Anchor=161.19ms | S2_IO=12.31ms | S3_Hydr=21.63ms | S4_Query=40.00ms) | Integrity=100.0% | Mem=23.62MB
+   > Sub-batch: 0 (0 = one call per ISU)
+     Run  1/30: Total=287.50ms (S1_Anchor=180.06ms | S2_IO=46.63ms | S3_Hydr=18.45ms | S4_Query=42.12ms) | Integrity=100.0% | Mem=24.00MB
+     Run 10/30: Total=262.97ms (S1_Anchor=148.26ms | S2_IO=52.71ms | S3_Hydr=19.77ms | S4_Query=41.97ms) | Integrity=100.0% | Mem=24.03MB
+     Run 20/30: Total=229.92ms (S1_Anchor=110.76ms | S2_IO=55.12ms | S3_Hydr=19.30ms | S4_Query=44.56ms) | Integrity=100.0% | Mem=23.97MB
+     Run 30/30: Total=243.78ms (S1_Anchor=128.66ms | S2_IO=45.95ms | S3_Hydr=25.13ms | S4_Query=43.75ms) | Integrity=100.0% | Mem=24.06MB
+
+[Sub-Experiment 3 Complete] Results saved to: query/output/2026-10-27_12-04-42/exp3_skew.csv
+
+Evaluation Complete. All requested CSV results saved in: query/output/2026-10-27_12-04-42

@@ -1,0 +1,60 @@
+% Requires \usepackage{booktabs}
+
+\begin{table}[t]
+\centering
+\caption{Sub-Experiment 1: end-to-end latency of \texttt{Q3\_Inference} ($C=1$), median (P95) in ms over 30 runs. Federated configurations use intra-ISU sub-batching.}
+\label{tab:query-exp1}
+\begin{tabular}{rrrrrr}
+\toprule
+Devices & Centralized & Fed. 1 ISU & Fed. 2 ISUs & Fed. 4 ISUs & Fed. 8 ISUs \\
+\midrule
+500 & 38 (40) & 47 (52) & 47 (51) & 44 (49) & 44 (47) \\
+1,000 & 58 (74) & 67 (72) & 68 (71) & 67 (75) & 65 (68) \\
+2,000 & 139 (159) & 102 (128) & 104 (112) & 102 (112) & 103 (134) \\
+3,000 & 151 (230) & 152 (186) & 152 (192) & 149 (176) & 152 (172) \\
+4,000 & 244 (337) & 244 (265) & 246 (334) & 245 (311) & 249 (258) \\
+5,000 & 338 (459) & 249 (353) & 250 (318) & 256 (363) & 255 (341) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Sub-Experiment 2: end-to-end latency at 5{,}000 devices, median (P95) in ms over 30 bursts of $C$ simultaneous queries. $\Delta$ is the change of the Federated (8 ISUs) median relative to Centralized.}
+\label{tab:query-exp2}
+\begin{tabular}{llrrr}
+\toprule
+Query & $C$ & Centralized & Federated & $\Delta$ \\
+\midrule
+Q1 & 1 & 54 (58) & 60 (63) & +11\% \\
+Q1 & 5 & 247 (331) & 161 (249) & -35\% \\
+Q1 & 10 & 554 (667) & 396 (481) & -29\% \\
+Q1 & 20 & 1179 (1375) & 810 (952) & -31\% \\
+\midrule
+Q2 & 1 & 58 (69) & 67 (77) & +15\% \\
+Q2 & 5 & 346 (446) & 247 (330) & -29\% \\
+Q2 & 10 & 742 (888) & 523 (585) & -29\% \\
+Q2 & 20 & 1498 (1765) & 1068 (1227) & -29\% \\
+\midrule
+Q3 & 1 & 339 (394) & 258 (338) & -24\% \\
+Q3 & 5 & 1338 (1674) & 944 (1226) & -29\% \\
+Q3 & 10 & 3065 (3457) & 1865 (2359) & -39\% \\
+Q3 & 20 & 6871 (7182) & 4745 (5000) & -31\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Sub-Experiment 3: partition skew at 5{,}000 devices and 8 ISUs (\texttt{Q3\_Inference}, $C=1$). Stage 2 median in ms with and without intra-ISU sub-batching; end-to-end median (P95) in ms of the full system.}
+\label{tab:query-exp3}
+\begin{tabular}{lrrr}
+\toprule
+Partitioning & Stage 2 (sub-batch 250) & Stage 2 (one call/ISU) & End-to-end \\
+\midrule
+Uniform & 12.0 & 18.9 & 256 (343) \\
+Moderate (50\% on ISU 0) & 12.2 & 36.3 & 249 (352) \\
+Hotspot (80\% on ISU 0) & 12.4 & 47.8 & 251 (332) \\
+\bottomrule
+\end{tabular}
+\end{table}

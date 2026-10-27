@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -15,6 +14,8 @@ import (
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"dt-real-bench/twin"
 )
 
 // ======================================================================================
@@ -87,11 +88,11 @@ func assignTargetISU(sensorIdx int, totalSensors int, numISUs int, partMode stri
 		}
 		return 1 + (sensorIdx % (numISUs - 1))
 	default: // "Uniform"
-		return (sensorIdx - 1) % numISUs
+		return twin.UniformISU(sensorIdx, numISUs)
 	}
 }
 
-// setupEnvironment constructs a multi-hop hierarchy of ontological Thing nodes linked via `hasChild`:
+// setupEnvironment loads the shared Wind Farm topology (see twin.BuildWindFarm):
 // WindFarm (Thing) -> 5 Zones (Thing) -> 50 Turbines (Thing) -> 200 Components (Thing) -> N Sensors (Thing).
 // Only leaf Sensor Things hold Data Anchors (`isu_id`, `external_id`); upper levels are purely topological Things.
 func setupEnvironment(count int, numISUs int, partMode string) map[int]ExpectedSensor {
@@ -101,129 +102,26 @@ func setupEnvironment(count int, numISUs int, partMode string) map[int]ExpectedS
 		db.Exec("TRUNCATE TABLE query_test")
 	}
 
-	dgClient.Alter(ctx, &api.Operation{Schema: `
-		name: string @index(exact) .
-		asset_category: string @index(exact) .
-		sub_type: string @index(exact) .
-		external_id: int @index(int) .
-		isu_id: int @index(int) .
-		max_threshold: float .
-		value: float @index(float) .
-		timestamp: datetime @index(hour) .
-		hasChild: [uid] @reverse .
-		hasObservation: [uid] .
-		type Observation {
-			timestamp
-			value
-		}
-		type Thing {
-			name
-			asset_category
-			sub_type
-			external_id
-			isu_id
-			max_threshold
-			value
-			hasObservation
-			hasChild
-		}
-	`})
+	dgClient.Alter(ctx, &api.Operation{Schema: twin.Schema})
+
+	windFarmRoot, specs := twin.BuildWindFarm(count, func(externalID int) int {
+		return assignTargetISU(externalID, count, numISUs, partMode)
+	})
 
 	expected := make(map[int]ExpectedSensor, count)
-	componentTypes := []string{"Gearbox", "Generator", "Rotor", "PitchControl"}
-	sensorTypes := []string{"Temperature", "Vibration", "ActivePower", "RotationalSpeed"}
-
-	const numZones = 5
-	const turbinesPerZone = 10 // 50 turbines total
-	const compsPerTurbine = 4  // 200 components total
-
-	compSensors := make(map[int][]Thing, numZones*turbinesPerZone*compsPerTurbine)
-
-	for i := 1; i <= count; i++ {
-		compGlobalIdx := (i - 1) % (numZones * turbinesPerZone * compsPerTurbine)
-		zoneIdx := compGlobalIdx / (turbinesPerZone * compsPerTurbine)
-		turbGlobalIdx := compGlobalIdx / compsPerTurbine
-		compLocalIdx := compGlobalIdx % compsPerTurbine
-
-		zoneName := fmt.Sprintf("Zone_%d", zoneIdx)
-		turbName := fmt.Sprintf("Turbine_%d", turbGlobalIdx)
-		compType := componentTypes[compLocalIdx]
-		sType := sensorTypes[i%len(sensorTypes)]
-
-		// Deterministic synthetic telemetry value in [20.0, 100.0]
-		val := 20.0 + float64((i*37)%800)/10.0
-		threshold := 80.0
-		isuID := assignTargetISU(i, count, numISUs, partMode)
-
-		sensorThing := Thing{
-			Uid:           fmt.Sprintf("_:sensor_%d", i),
-			DType:         []string{"Thing"},
-			Name:          fmt.Sprintf("Sensor_%d", i),
-			AssetCategory: "Sensor",
-			SubType:       sType,
-			ExternalID:    i,
-			IsuID:         isuID,
-			MaxThreshold:  threshold,
-		}
-		compSensors[compGlobalIdx] = append(compSensors[compGlobalIdx], sensorThing)
-
+	for _, spec := range specs {
+		i := spec.ExternalID
 		expected[i] = ExpectedSensor{
 			ExternalID:    i,
-			IsuID:         isuID,
-			ZoneName:      zoneName,
-			TurbineName:   turbName,
-			ComponentType: compType,
-			SensorType:    sType,
-			MaxThreshold:  threshold,
-			Value:         val,
+			IsuID:         spec.IsuID,
+			ZoneName:      spec.ZoneName,
+			TurbineName:   spec.TurbineName,
+			ComponentType: spec.ComponentType,
+			SensorType:    spec.SensorType,
+			MaxThreshold:  spec.MaxThreshold,
+			// Deterministic synthetic telemetry value in [20.0, 100.0]
+			Value: 20.0 + float64((i*37)%800)/10.0,
 		}
-	}
-
-	// Construct the hierarchical tree of topological Thing nodes (WindFarm -> Zone -> Turbine -> Component -> Sensor)
-	zones := make([]Thing, 0, numZones)
-	for z := 0; z < numZones; z++ {
-		turbines := make([]Thing, 0, turbinesPerZone)
-		for t := 0; t < turbinesPerZone; t++ {
-			turbGlobalIdx := z*turbinesPerZone + t
-			comps := make([]Thing, 0, compsPerTurbine)
-			for c := 0; c < compsPerTurbine; c++ {
-				compGlobalIdx := turbGlobalIdx*compsPerTurbine + c
-				compType := componentTypes[c]
-				compThing := Thing{
-					Uid:           fmt.Sprintf("_:comp_%d", compGlobalIdx),
-					DType:         []string{"Thing"},
-					Name:          fmt.Sprintf("Comp_%d_%s", compGlobalIdx, compType),
-					AssetCategory: "Component",
-					SubType:       compType,
-					HasChild:      compSensors[compGlobalIdx],
-				}
-				comps = append(comps, compThing)
-			}
-			turbThing := Thing{
-				Uid:           fmt.Sprintf("_:turb_%d", turbGlobalIdx),
-				DType:         []string{"Thing"},
-				Name:          fmt.Sprintf("Turbine_%d", turbGlobalIdx),
-				AssetCategory: "Turbine",
-				HasChild:      comps,
-			}
-			turbines = append(turbines, turbThing)
-		}
-		zoneThing := Thing{
-			Uid:           fmt.Sprintf("_:zone_%d", z),
-			DType:         []string{"Thing"},
-			Name:          fmt.Sprintf("Zone_%d", z),
-			AssetCategory: "Zone",
-			HasChild:      turbines,
-		}
-		zones = append(zones, zoneThing)
-	}
-
-	windFarmRoot := Thing{
-		Uid:           "_:windfarm_0",
-		DType:         []string{"Thing"},
-		Name:          "WindFarm_Alpha",
-		AssetCategory: "WindFarm",
-		HasChild:      zones,
 	}
 
 	jsonBytes, err := json.Marshal(windFarmRoot)
@@ -238,7 +136,8 @@ func setupEnvironment(count int, numISUs int, partMode string) map[int]ExpectedS
 }
 
 // performUpdates injects a realistic historical time-series window (`HistorySamples` observations
-// per sensor) into either the Centralized KG (as timestamped Observation nodes) or the Federated
+// per sensor) into either the Centralized KG (as timestamped Observation nodes plus the materialized
+// `last_value`, via twin.ObservationUpdate) or the Federated
 // TSDB ISUs (via bulk `COPY` protocol), ensuring both architectures resolve identical LKV queries.
 func performUpdates(arch string, numISUs int, data map[int]ExpectedSensor) {
 	ctx := context.Background()
@@ -261,20 +160,16 @@ func performUpdates(arch string, numISUs int, data map[int]ExpectedSensor) {
 				obsList := make([]Observation, HistorySamples)
 				for h := 0; h < HistorySamples-1; h++ {
 					obsList[h] = Observation{
-						DType:     []string{"Observation"},
 						Timestamp: baseTime.Add(time.Duration(h) * time.Second),
 						Value:     item.Value - 1.0,
 					}
 				}
 				obsList[HistorySamples-1] = Observation{
-					DType:     []string{"Observation"},
 					Timestamp: baseTime.Add(time.Duration(HistorySamples) * time.Second),
 					Value:     item.Value,
 				}
-				mutations = append(mutations, Thing{
-					Uid:            node.Uid,
-					HasObservation: obsList,
-				})
+				// Same write path as Centralized ingestion: append history + materialize LKV
+				mutations = append(mutations, twin.ObservationUpdate(node.Uid, obsList))
 			}
 		}
 		batchSize := 200
@@ -323,4 +218,3 @@ func performUpdates(arch string, numISUs int, data map[int]ExpectedSensor) {
 		wg.Wait()
 	}
 }
-

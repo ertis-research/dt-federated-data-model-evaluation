@@ -23,14 +23,14 @@ func sinceMs(t time.Time) float64 {
 
 // executeWorkload dispatches single-stream (C = 1) or concurrent (C > 1) semantic query
 // evaluations and records the per-stage latency breakdown, integrity score, and heap allocation.
-func executeWorkload(arch string, numISUs int, queryType string, concurrency int, expected map[int]ExpectedSensor) QueryMetrics {
+func executeWorkload(arch string, numISUs int, queryType string, concurrency int, subBatch int, expected map[int]ExpectedSensor) QueryMetrics {
 	var memBefore, memAfter runtime.MemStats
 	runtime.ReadMemStats(&memBefore)
 
 	startWall := time.Now()
 
 	if concurrency <= 1 {
-		s1, s2, s3, s4, integrity := executeSingleQuery(arch, numISUs, queryType, expected)
+		s1, s2, s3, s4, integrity := executeSingleQuery(arch, numISUs, queryType, subBatch, expected)
 		totalMs := sinceMs(startWall)
 		runtime.ReadMemStats(&memAfter)
 		memMB := float64(memAfter.TotalAlloc-memBefore.TotalAlloc) / 1024.0 / 1024.0
@@ -56,7 +56,7 @@ func executeWorkload(arch string, numISUs int, queryType string, concurrency int
 		go func() {
 			defer wg.Done()
 			qStart := time.Now()
-			s1, s2, s3, s4, integrity := executeSingleQuery(arch, numISUs, queryType, expected)
+			s1, s2, s3, s4, integrity := executeSingleQuery(arch, numISUs, queryType, subBatch, expected)
 			qTotal := sinceMs(qStart)
 
 			mu.Lock()
@@ -88,15 +88,15 @@ func executeWorkload(arch string, numISUs int, queryType string, concurrency int
 
 // executeSingleQuery routes the query execution to either the Centralized Knowledge Graph
 // baseline or the 4-Stage Federated Orchestration Engine.
-func executeSingleQuery(arch string, numISUs int, queryType string, expected map[int]ExpectedSensor) (s1, s2, s3, s4, integrity float64) {
+func executeSingleQuery(arch string, numISUs int, queryType string, subBatch int, expected map[int]ExpectedSensor) (s1, s2, s3, s4, integrity float64) {
 	if arch == "Centralized" {
 		return executeCentralizedQuery(queryType, expected)
 	}
-	return executeFederatedQuery(numISUs, queryType, expected)
+	return executeFederatedQuery(numISUs, queryType, subBatch, expected)
 }
 
 // executeCentralizedQuery traverses the multi-hop `hasChild` relationships in the monolithic KG,
-// resolves the Last Known Value (LKV) via `hasObservation(orderdesc: timestamp, first: 1)`,
+// resolves the Last Known Value (LKV) from the materialized `last_value` predicate,
 // and executes the same Stage 4 semantic evaluation over the resulting triples.
 func executeCentralizedQuery(queryType string, expected map[int]ExpectedSensor) (s1, s2, s3, s4, integrity float64) {
 	ctx := context.Background()
@@ -126,9 +126,7 @@ func executeCentralizedQuery(queryType string, expected map[int]ExpectedSensor) 
 							sub_type
 							external_id
 							max_threshold
-							hasObservation(orderdesc: timestamp, first: 1) {
-								value
-							}
+							last_value
 						}
 					}
 				}
@@ -148,9 +146,7 @@ func executeCentralizedQuery(queryType string, expected map[int]ExpectedSensor) 
 					sub_type
 					external_id
 					max_threshold
-					hasObservation(orderdesc: timestamp, first: 1) {
-						value
-					}
+					last_value
 				}
 			}
 		}`
@@ -180,9 +176,7 @@ func executeCentralizedQuery(queryType string, expected map[int]ExpectedSensor) 
 								sub_type
 								external_id
 								max_threshold
-								hasObservation(orderdesc: timestamp, first: 1) {
-									value
-								}
+								last_value
 							}
 						}
 					}
@@ -203,14 +197,18 @@ func executeCentralizedQuery(queryType string, expected map[int]ExpectedSensor) 
 	json.Unmarshal(resp.Json, &decode)
 	s1 = sinceMs(t0)
 
+	// Stage 3: Synthesize canonical RDF triples from the retrieved KG hierarchy
+	t3 := time.Now()
+	triples := extractTopologicalTriples(decode.Roots, len(expected), nil)
+	s3 = sinceMs(t3)
+
 	// Stage 4: Index triples & run embedded BGP / inference engine over the retrieved hierarchy
 	t4 := time.Now()
-	triples := extractTopologicalTriples(decode.Roots, len(expected), nil)
 	matched := runStage4SemanticEngine(queryType, triples, len(expected))
 	s4 = sinceMs(t4)
 
 	integrity = verifyIntegrity(queryType, matched, expected)
-	return s1, 0, 0, s4, integrity
+	return s1, 0, s3, s4, integrity
 }
 
 // executeFederatedQuery implements the 4-Stage Orchestration Sequence described in Section 4:
@@ -218,7 +216,10 @@ func executeCentralizedQuery(queryType string, expected map[int]ExpectedSensor) 
 //   - Stage 2: Parallel State Retrieval from ISUs via Canonical JSON Semantic Wrappers
 //   - Stage 3: Semantic Hydration (JSON structural flattening & RDF triple synthesis into Ephemeral Graph)
 //   - Stage 4: Query & Inference Execution (Triple indexing, SPARQL-like BGP matching & Forward-Chaining rules)
-func executeFederatedQuery(numISUs int, queryType string, expected map[int]ExpectedSensor) (s1, s2, s3, s4, integrity float64) {
+//
+// With subBatch > 0, each ISU's anchors are split into parallel sub-batches of at most subBatch IDs;
+// with subBatch == NoSubBatch, each ISU receives a single wrapper call.
+func executeFederatedQuery(numISUs int, queryType string, subBatch int, expected map[int]ExpectedSensor) (s1, s2, s3, s4, integrity float64) {
 	ctx := context.Background()
 
 	// ----------------------------------------------------------------------------------
@@ -336,8 +337,12 @@ func executeFederatedQuery(numISUs int, queryType string, expected map[int]Expec
 		if len(anchorIDs) == 0 {
 			continue
 		}
-		for start := 0; start < len(anchorIDs); start += ISUSubBatch {
-			end := start + ISUSubBatch
+		chunkSize := subBatch
+		if chunkSize <= 0 {
+			chunkSize = len(anchorIDs)
+		}
+		for start := 0; start < len(anchorIDs); start += chunkSize {
+			end := start + chunkSize
 			if end > len(anchorIDs) {
 				end = len(anchorIDs)
 			}
@@ -412,12 +417,20 @@ func extractDataAnchors(roots []Thing, numISUs int) map[int][]int32 {
 
 // fetchISUWrapperJSON executes the Last Known Value (LKV) query on the specified ISU TSDB
 // and serializes the result into the canonical JSON exchange schema of the Semantic Wrapper.
+// Each sensor's LKV is a top-1 probe on the `(sensor_id, time DESC)` index (LATERAL ... LIMIT 1),
+// so the cost per sensor does not depend on the length of its history, mirroring the
+// materialized `last_value` read by the Centralized baseline.
 func fetchISUWrapperJSON(db *sql.DB, ids []int32) ([]byte, error) {
 	query := `
-        SELECT DISTINCT ON (sensor_id) sensor_id, payload
-        FROM query_test
-        WHERE sensor_id = ANY($1)
-        ORDER BY sensor_id, time DESC
+        SELECT anchors.sensor_id, lkv.payload
+        FROM unnest($1::int[]) AS anchors(sensor_id)
+        CROSS JOIN LATERAL (
+            SELECT payload
+            FROM query_test
+            WHERE query_test.sensor_id = anchors.sensor_id
+            ORDER BY time DESC
+            LIMIT 1
+        ) AS lkv
     `
 	rows, err := db.Query(query, pq.Array(ids))
 	if err != nil {
@@ -481,4 +494,3 @@ func verifyIntegrity(queryType string, matchedCount int, expected map[int]Expect
 	}
 	return acc
 }
-

@@ -2,8 +2,8 @@
 Plot generator for Sub-Experiment 2: Query Complexity (Q1, Q2, Q3) & Concurrent Workloads.
 
 Generates:
-  - output/query_complexity_comparison.pdf
-  - output/query_concurrency_scaling.pdf
+  - output/query_exp2_complexity_comparison.pdf
+  - output/query_exp2_concurrency_scaling.pdf  (one panel per query profile)
 
 Usage:
   python query_exp2_complexity.py                           # Uses latest execution in evaluation/query/output/
@@ -17,6 +17,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 
 CSV_FILENAME = "exp2_complexity_concurrency.csv"
 
@@ -52,6 +53,15 @@ def resolve_csv_path(target_dir: str | None, csv_filename: str) -> Path:
     )
 
 
+# Colors shared with the Sub-Experiment 1 figures (Centralized / Federated 8 ISUs)
+CEN_COLOR = "#1f77b4"
+FED_COLOR = "#9467bd"
+
+
+def p95(x):
+    return np.percentile(x, 95)
+
+
 def p99(x):
     return np.percentile(x, 99)
 
@@ -80,8 +90,8 @@ def generate_exp2_plots(target_dir: str | None = None, output_dir: str = "output
     stats2 = (
         exp2.groupby(["Query_Type", "Concurrency", "Architecture"], as_index=False)
         .agg(
-            Total_Mean=("Total_Latency_ms", "mean"),
-            Total_P99=("Total_Latency_ms", p99),
+            Total_Median=("Total_Latency_ms", "median"),
+            Total_P95=("Total_Latency_ms", p95),
         )
     )
 
@@ -95,41 +105,58 @@ def generate_exp2_plots(target_dir: str | None = None, output_dir: str = "output
         width = 0.35
 
         cen_vals = [
-            c1[(c1["Query_Type"] == q) & (c1["Architecture"] == "Centralized")]["Total_Mean"].mean()
+            c1[(c1["Query_Type"] == q) & (c1["Architecture"] == "Centralized")]["Total_Median"].mean()
             for q in q_types
         ]
         fed_vals = [
-            c1[(c1["Query_Type"] == q) & (c1["Architecture"].str.startswith("Federated"))]["Total_Mean"].mean()
+            c1[(c1["Query_Type"] == q) & (c1["Architecture"].str.startswith("Federated"))]["Total_Median"].mean()
             for q in q_types
         ]
 
-        ax.bar(x - width / 2, fed_vals, width, label="Federated (8 ISUs)", edgecolor="black", hatch="//", alpha=0.85)
-        ax.bar(x + width / 2, cen_vals, width, label="Centralized", edgecolor="black", hatch="\\\\", alpha=0.85)
+        ax.bar(x - width / 2, cen_vals, width, label="Centralized", color=CEN_COLOR,
+               edgecolor="black", hatch="\\\\", alpha=0.85)
+        ax.bar(x + width / 2, fed_vals, width, label="Federated (8 ISUs)", color=FED_COLOR,
+               edgecolor="black", hatch="//", alpha=0.85)
 
         ax.set_xticks(x)
         ax.set_xticklabels(q_labels)
-        ax.set_ylabel("End-to-End Latency (ms)")
+        ax.set_ylabel("Median End-to-End Latency (ms)")
         ax.legend(fontsize=8, edgecolor="black")
         fig.tight_layout()
-        fig.savefig(os.path.join(output_dir, "query_complexity_comparison.pdf"), bbox_inches="tight")
+        fig.savefig(os.path.join(output_dir, "query_exp2_complexity_comparison.pdf"), bbox_inches="tight")
         plt.close(fig)
 
-    # Figure 2B: Concurrent Query Scalability (C = 1, 5, 10, 20) for Q3 Inference
-    q3 = stats2[stats2["Query_Type"] == "Q3_Inference"]
-    if not q3.empty:
-        plt.figure(figsize=(4.2, 3.2))
-        for arch_prefix, label, marker in [("Federated", "Federated (8 ISUs)", "s"), ("Centralized", "Centralized", "o")]:
-            sub = q3[q3["Architecture"].str.startswith(arch_prefix)].sort_values("Concurrency")
-            if sub.empty:
-                continue
-            plt.plot(sub["Concurrency"], sub["Total_Mean"], marker=marker, label=f"{label} (Mean)")
-            plt.plot(sub["Concurrency"], sub["Total_P99"], marker=marker, linestyle="--", label=f"{label} (P99)")
-        plt.xlabel("Concurrent Clients (Queries in Parallel)")
-        plt.ylabel("End-to-End Query Latency (ms)")
-        plt.legend(fontsize=8, edgecolor="black")
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, "query_concurrency_scaling.pdf"), bbox_inches="tight")
-        plt.close()
+    # Figure 2B: Concurrent Query Scalability (C = 1, 5, 10, 20), one panel per query profile.
+    # Concurrency is a burst of C simultaneous queries per run; each run's latency is the mean
+    # over its C queries, and median/P95 are taken over the 30 runs.
+    q_types = ["Q1_Selective", "Q2_Filtering", "Q3_Inference"]
+    q_titles = ["Q1: Selective", "Q2: Filtering", "Q3: Inference"]
+    present = [q for q in q_types if q in set(stats2["Query_Type"])]
+    if present:
+        fig, axes = plt.subplots(1, len(present), figsize=(2.6 * len(present), 3.0), squeeze=False)
+        for ax, q in zip(axes[0], present):
+            qs = stats2[stats2["Query_Type"] == q]
+            for arch_prefix, label, marker, color in [
+                ("Centralized", "Centralized", "o", CEN_COLOR),
+                ("Federated", "Federated (8 ISUs)", "s", FED_COLOR),
+            ]:
+                sub = qs[qs["Architecture"].str.startswith(arch_prefix)].sort_values("Concurrency")
+                if sub.empty:
+                    continue
+                ax.plot(sub["Concurrency"], sub["Total_Median"], marker=marker, color=color, label=label)
+                ax.fill_between(sub["Concurrency"], sub["Total_Median"], sub["Total_P95"],
+                                color=color, alpha=0.15, linewidth=0)
+            ax.set_title(q_titles[q_types.index(q)], fontsize=9)
+            ax.set_xticks([1, 5, 10, 20])
+            ax.set_xlabel("Concurrent Queries (C)")
+        axes[0][0].set_ylabel("End-to-End Query Latency (ms)")
+        handles, _ = axes[0][0].get_legend_handles_labels()
+        handles.append(Patch(facecolor="grey", alpha=0.3, label="Median to P95"))
+        fig.legend(handles=handles, fontsize=8, ncol=3, loc="lower center",
+                   bbox_to_anchor=(0.5, 1.0), edgecolor="black")
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_dir, "query_exp2_concurrency_scaling.pdf"), bbox_inches="tight")
+        plt.close(fig)
 
     print(f"[Exp2 Complexity & Concurrency] Figures saved in '{output_dir}/'.")
 

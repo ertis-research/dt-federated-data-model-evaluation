@@ -4,6 +4,7 @@ Delegates to the 3 individual sub-experiment plotting scripts:
   - query_exp1_scalability.py  (exp1_scalability.csv)
   - query_exp2_complexity.py   (exp2_complexity_concurrency.csv)
   - query_exp3_skew.py         (exp3_skew.csv)
+  - query_tables.py            (LaTeX tables for the three sub-experiments)
 
 Usage:
   python query.py                           # Uses latest execution in evaluation/query/output/
@@ -15,6 +16,7 @@ import argparse
 from query_exp1_scalability import generate_exp1_plots
 from query_exp2_complexity import generate_exp2_plots
 from query_exp3_skew import generate_exp3_plots
+from query_tables import generate_query_tables
 
 
 def main():
@@ -45,6 +47,7 @@ def main():
         ("Exp1 Scalability", generate_exp1_plots),
         ("Exp2 Complexity & Concurrency", generate_exp2_plots),
         ("Exp3 Partition Skew", generate_exp3_plots),
+        ("Query Tables", generate_query_tables),
     ]:
         try:
             fn(target_dir=target, output_dir=args.output)

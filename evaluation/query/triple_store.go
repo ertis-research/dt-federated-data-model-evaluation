@@ -69,7 +69,7 @@ func (g *EphemeralTripleGraph) InsertTriple(s, p, o string, numVal float64, isNu
 
 // extractTopologicalTriples synthesizes canonical RDF triples from the Knowledge Graph
 // hierarchy and merges either hydrated dynamic state values (Federated Stage 3) or
-// centralized time-series observations (Centralized baseline).
+// the materialized centralized LKV (Centralized baseline).
 func extractTopologicalTriples(roots []Thing, estSensors int, hydratedState map[int]float64) []RDFTriple {
 	triples := make([]RDFTriple, 0, estSensors*5)
 
@@ -86,8 +86,8 @@ func extractTopologicalTriples(roots []Thing, estSensors int, hydratedState map[
 				if v, ok := hydratedState[n.ExternalID]; ok {
 					triples = append(triples, RDFTriple{Subject: uri, Predicate: "dt:hasDynamicValue", Object: "hydrated", NumValue: v})
 				}
-			} else if len(n.HasObservation) > 0 {
-				v := n.HasObservation[0].Value
+			} else if n.LastValue != nil {
+				v := *n.LastValue
 				triples = append(triples, RDFTriple{Subject: uri, Predicate: "dt:hasDynamicValue", Object: "centralized", NumValue: v})
 			}
 		}
@@ -184,4 +184,3 @@ func runStage4SemanticEngine(queryType string, triples []RDFTriple, estSensors i
 	}
 	return g.Matched
 }
-

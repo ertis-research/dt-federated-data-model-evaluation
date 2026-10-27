@@ -23,7 +23,9 @@ const (
 
 // runSubExperiment1 evaluates horizontal scalability across varying numbers of
 // Independent Storage Units (N = 1, 2, 4, 8 ISUs) and Knowledge Graph sizes
-// (500 to 5,000 sensors) under the full-hierarchy Q3 inference workload.
+// (500 to 5,000 sensors) under the full-hierarchy Q3 inference workload. Every federated
+// configuration is measured with intra-ISU sub-batching (full system) and without it
+// (ablation), on the same loaded data, to separate horizontal scaling from intra-ISU parallelism.
 func runSubExperiment1(outputDir string, maxISUs int) {
 	csvPath := filepath.Join(outputDir, Exp1CSVFileName)
 	file, writer := createExperimentCSV(csvPath)
@@ -45,10 +47,12 @@ func runSubExperiment1(outputDir string, maxISUs int) {
 				continue
 			}
 			archName := "Centralized"
+			subBatches := []int{NoSubBatch}
 			if numISUs > 0 {
 				archName = fmt.Sprintf("Federated_%dISU", numISUs)
+				subBatches = []int{ISUSubBatch, NoSubBatch}
 			}
-			runScenario(writer, "Exp1_Scalability", count, archName, numISUs, "Uniform", "Q3_Inference", 1)
+			runScenario(writer, "Exp1_Scalability", count, archName, numISUs, "Uniform", "Q3_Inference", 1, subBatches)
 		}
 	}
 
@@ -80,8 +84,8 @@ func runSubExperiment2(outputDir string, maxISUs int) {
 	for _, qType := range queries {
 		for _, conc := range concurrencies {
 			// Centralized vs Federated (8 ISUs) at 5000 sensors
-			runScenario(writer, "Exp2_Complexity_Concurrency", 5000, "Centralized", 0, "Uniform", qType, conc)
-			runScenario(writer, "Exp2_Complexity_Concurrency", 5000, fmt.Sprintf("Federated_%dISU", targetISUs), targetISUs, "Uniform", qType, conc)
+			runScenario(writer, "Exp2_Complexity_Concurrency", 5000, "Centralized", 0, "Uniform", qType, conc, []int{NoSubBatch})
+			runScenario(writer, "Exp2_Complexity_Concurrency", 5000, fmt.Sprintf("Federated_%dISU", targetISUs), targetISUs, "Uniform", qType, conc, []int{ISUSubBatch})
 		}
 	}
 
@@ -89,7 +93,8 @@ func runSubExperiment2(outputDir string, maxISUs int) {
 }
 
 // runSubExperiment3 evaluates sensitivity to data partition skew across ISUs by comparing
-// Uniform, ModerateSkew (50% on ISU 0), and HotspotSkew (80% on ISU 0) distributions.
+// Uniform, ModerateSkew (50% on ISU 0), and HotspotSkew (80% on ISU 0) distributions,
+// each with and without intra-ISU sub-batching (the mechanism that splits the hotspot ISU's load).
 func runSubExperiment3(outputDir string, maxISUs int) {
 	csvPath := filepath.Join(outputDir, Exp3CSVFileName)
 	file, writer := createExperimentCSV(csvPath)
@@ -111,27 +116,39 @@ func runSubExperiment3(outputDir string, maxISUs int) {
 	}
 
 	for _, skew := range skewModes {
-		runScenario(writer, "Exp3_Skew", 5000, fmt.Sprintf("Federated_%dISU", skewISUs), skewISUs, skew, "Q3_Inference", 1)
+		runScenario(writer, "Exp3_Skew", 5000, fmt.Sprintf("Federated_%dISU", skewISUs), skewISUs, skew, "Q3_Inference", 1, []int{ISUSubBatch, NoSubBatch})
 	}
 
 	fmt.Printf("\n[Sub-Experiment 3 Complete] Results saved to: %s\n", csvPath)
 }
 
-// runScenario provisions the multi-hop topology and historical time-series observations,
-// executes warm-up iterations, performs the measured benchmark runs, and flushes metrics to CSV.
-func runScenario(writer *csv.Writer, expType string, count int, arch string, numISUs int, partMode string, queryType string, concurrency int) {
+// runScenario provisions the multi-hop topology and historical time-series observations once,
+// then, for each sub-batching variant, executes warm-up iterations, performs the measured
+// benchmark runs, and flushes metrics to CSV. Variants therefore share the same loaded data.
+func runScenario(writer *csv.Writer, expType string, count int, arch string, numISUs int, partMode string, queryType string, concurrency int, subBatches []int) {
 	fmt.Printf("\n--- [%s] Arch: %s | Sensors: %d | Part: %s | Query: %s | Conc: %d ---\n",
 		expType, arch, count, partMode, queryType, concurrency)
 
 	fmt.Print("   > Setting up multi-hop Thing topology (hasChild) & state... ")
 	expectedValues := setupEnvironment(count, numISUs, partMode)
 	performUpdates(arch, numISUs, expectedValues)
-	time.Sleep(2 * time.Second) // Allow Dgraph BadgerDB & Postgres indexes to settle before warm-up
+	// Wait until Dgraph (compactions, rollups, previous DropAll cleanup) and the ISUs are idle
+	waitForStorageIdle()
 	fmt.Println("Ready.")
 
+	for _, subBatch := range subBatches {
+		if arch != "Centralized" {
+			fmt.Printf("   > Sub-batch: %d (0 = one call per ISU)\n", subBatch)
+		}
+		runVariant(writer, expType, count, arch, numISUs, partMode, queryType, concurrency, subBatch, expectedValues)
+	}
+}
+
+// runVariant executes the warm-up and measured runs of a single sub-batching variant.
+func runVariant(writer *csv.Writer, expType string, count int, arch string, numISUs int, partMode string, queryType string, concurrency int, subBatch int, expectedValues map[int]ExpectedSensor) {
 	// Warm-up phase
 	for w := 0; w < WarmUpRuns; w++ {
-		executeWorkload(arch, numISUs, queryType, concurrency, expectedValues)
+		executeWorkload(arch, numISUs, queryType, concurrency, subBatch, expectedValues)
 		time.Sleep(SimulatedDelay)
 	}
 
@@ -139,7 +156,7 @@ func runScenario(writer *csv.Writer, expType string, count int, arch string, num
 	for r := 1; r <= RunsPerTest; r++ {
 		time.Sleep(SimulatedDelay)
 
-		m := executeWorkload(arch, numISUs, queryType, concurrency, expectedValues)
+		m := executeWorkload(arch, numISUs, queryType, concurrency, subBatch, expectedValues)
 		m.ExperimentType = expType
 		m.NumSensors = count
 		m.Architecture = arch
@@ -147,6 +164,7 @@ func runScenario(writer *csv.Writer, expType string, count int, arch string, num
 		m.PartitionMode = partMode
 		m.QueryType = queryType
 		m.Concurrency = concurrency
+		m.SubBatch = subBatch
 		m.RunID = r
 
 		if r == 1 || r == RunsPerTest || r%10 == 0 {
@@ -177,7 +195,7 @@ func resolveOutputRunDir() string {
 }
 
 // createExperimentCSV initializes a new CSV file for an individual sub-experiment and writes
-// the standard 15-column benchmark telemetry header.
+// the standard 16-column benchmark telemetry header.
 func createExperimentCSV(csvPath string) (*os.File, *csv.Writer) {
 	file, err := os.Create(csvPath)
 	if err != nil {
@@ -192,6 +210,7 @@ func createExperimentCSV(csvPath string) (*os.File, *csv.Writer) {
 		"Partition_Mode",
 		"Query_Type",
 		"Concurrency",
+		"Sub_Batch",
 		"Run_ID",
 		"Total_Latency_ms",
 		"Stage1_Anchor_ms",
@@ -215,6 +234,7 @@ func logResult(w *csv.Writer, m QueryMetrics) {
 		m.PartitionMode,
 		m.QueryType,
 		strconv.Itoa(m.Concurrency),
+		strconv.Itoa(m.SubBatch),
 		strconv.Itoa(m.RunID),
 		fmt.Sprintf("%.4f", m.TotalLatency),
 		fmt.Sprintf("%.4f", m.Stage1AnchorMs),
@@ -226,4 +246,3 @@ func logResult(w *csv.Writer, m QueryMetrics) {
 	})
 	w.Flush()
 }
-

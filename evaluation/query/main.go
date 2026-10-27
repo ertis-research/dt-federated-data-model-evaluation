@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math/rand"
 	"strings"
 )
 
@@ -27,7 +26,6 @@ func main() {
 	}
 
 	log.SetFlags(0)
-	rand.Seed(42)
 	cfg = config.LoadEnv()
 
 	initInfrastructure()

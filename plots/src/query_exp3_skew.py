@@ -2,7 +2,7 @@
 Plot generator for Sub-Experiment 3: Partition Skew Analysis (Uniform vs Moderate vs Hotspot).
 
 Generates:
-  - output/query_partition_skew.pdf
+  - output/query_exp3_partition_skew.pdf
 
 Usage:
   python query_exp3_skew.py                           # Uses latest execution in evaluation/query/output/
@@ -51,6 +51,13 @@ def resolve_csv_path(target_dir: str | None, csv_filename: str) -> Path:
     )
 
 
+SUB_BATCH_DEFAULT = 250  # evaluation/query ISUSubBatch (full-system orchestrator configuration)
+
+
+def p95(x):
+    return np.percentile(x, 95)
+
+
 def p99(x):
     return np.percentile(x, 99)
 
@@ -76,33 +83,57 @@ def generate_exp3_plots(target_dir: str | None = None, output_dir: str = "output
         print("[Exp3 Partition Skew] Warning: No rows found for Exp3_Skew.")
         return
 
+    if "Sub_Batch" not in exp3.columns:
+        # Older executions always used the default sub-batching
+        exp3 = exp3.assign(Sub_Batch=SUB_BATCH_DEFAULT)
+
     stats3 = (
-        exp3.groupby(["Partition_Mode"], as_index=False)
+        exp3.groupby(["Partition_Mode", "Sub_Batch"], as_index=False)
         .agg(
-            Total_Mean=("Total_Latency_ms", "mean"),
-            Total_P99=("Total_Latency_ms", p99),
-            S2_IO_Mean=("Stage2_ISU_IO_ms", "mean"),
+            Total_Median=("Total_Latency_ms", "median"),
+            Total_P95=("Total_Latency_ms", p95),
+            S2_IO_Median=("Stage2_ISU_IO_ms", "median"),
         )
     )
     modes = ["Uniform", "ModerateSkew", "HotspotSkew"]
     mode_labels = ["Uniform\n(Balanced)", "Moderate Skew\n(50% in ISU-0)", "Hotspot Skew\n(80% in ISU-0)"]
-    stats3["Order"] = stats3["Partition_Mode"].apply(lambda m: modes.index(m) if m in modes else 99)
-    stats3 = stats3.sort_values("Order")
+    present_modes = [m for m in modes if m in set(stats3["Partition_Mode"])]
+    variants = [v for v in (SUB_BATCH_DEFAULT, 0) if v in set(stats3["Sub_Batch"])]
 
-    fig, ax = plt.subplots(figsize=(4.2, 3.2))
-    x = np.arange(len(stats3))
-    width = 0.28
+    # (a) Stage 2 (ISU I/O) median per partition mode, with and without intra-ISU sub-batching.
+    #     Variants are measured sequentially on the same data, so only Stage 2 is compared between them.
+    # (b) End-to-end latency of the full system (sub-batching on): median bar, P95 whisker.
+    fig, (ax_s2, ax_tot) = plt.subplots(1, 2, figsize=(7.0, 3.2))
+    x = np.arange(len(present_modes))
+    tick_labels = [mode_labels[modes.index(m)] for m in present_modes]
+    width = 0.38 if len(variants) > 1 else 0.5
+    variant_style = {SUB_BATCH_DEFAULT: ("#9467bd", "//", f"Sub-batch {SUB_BATCH_DEFAULT}"),
+                     0: ("#c5b0d5", "..", "One call per ISU")}
 
-    ax.bar(x - width, stats3["S2_IO_Mean"], width, label="Stage 2: ISU I/O Wait", edgecolor="black", hatch="..")
-    ax.bar(x, stats3["Total_Mean"], width, label="Total E2E Mean", edgecolor="black", hatch="//")
-    ax.bar(x + width, stats3["Total_P99"], width, label="Total E2E P99", edgecolor="black", hatch="\\\\")
+    for v_idx, variant in enumerate(variants):
+        sub = stats3[stats3["Sub_Batch"] == variant].set_index("Partition_Mode").reindex(present_modes)
+        offset = (v_idx - (len(variants) - 1) / 2) * width
+        color, hatch, label = variant_style[variant]
+        ax_s2.bar(x + offset, sub["S2_IO_Median"].values, width, color=color, hatch=hatch,
+                  edgecolor="black", label=label)
+    ax_s2.set_xticks(x)
+    ax_s2.set_xticklabels(tick_labels, fontsize=8)
+    ax_s2.set_ylabel("Median Stage 2 ISU I/O (ms)")
+    ax_s2.set_title("(a) Stage 2 per partitioning", fontsize=9)
+    ax_s2.legend(fontsize=7, edgecolor="black")
 
-    ax.set_xticks(x)
-    ax.set_xticklabels(mode_labels[:len(stats3)])
-    ax.set_ylabel("Latency (ms)")
-    ax.legend(fontsize=8, edgecolor="black")
+    full = stats3[stats3["Sub_Batch"] == variants[0]].set_index("Partition_Mode").reindex(present_modes)
+    total = full["Total_Median"].values
+    ax_tot.bar(x, total, 0.5, color="#9467bd", edgecolor="black", alpha=0.85)
+    ax_tot.errorbar(x, total, yerr=[np.zeros(len(total)), full["Total_P95"].values - total],
+                    fmt="none", ecolor="black", capsize=3, lw=1)
+    ax_tot.set_xticks(x)
+    ax_tot.set_xticklabels(tick_labels, fontsize=8)
+    ax_tot.set_ylabel("End-to-End Query Latency (ms)")
+    name = f"sub-batch {variants[0]}" if variants[0] > 0 else "one call per ISU"
+    ax_tot.set_title(f"(b) End-to-end, {name}\n(bar: median, whisker: P95)", fontsize=9)
     fig.tight_layout()
-    fig.savefig(os.path.join(output_dir, "query_partition_skew.pdf"), bbox_inches="tight")
+    fig.savefig(os.path.join(output_dir, "query_exp3_partition_skew.pdf"), bbox_inches="tight")
     plt.close(fig)
 
     print(f"[Exp3 Partition Skew] Figure saved in '{output_dir}/'.")

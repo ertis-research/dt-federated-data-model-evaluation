@@ -6,6 +6,7 @@ package main
 import (
 	"database/sql"
 	"dt-real-bench/config"
+	"dt-real-bench/twin"
 	"time"
 
 	"github.com/dgraph-io/dgo/v2"
@@ -26,7 +27,13 @@ const (
 
 	// ISUSubBatch defines the maximum number of sensor external IDs dispatched per
 	// parallel worker goroutine targeting an individual Independent Storage Unit (ISU).
+	// It is the orchestrator's default (full system) configuration.
 	ISUSubBatch = 250
+
+	// NoSubBatch disables intra-ISU sub-batching: each ISU receives a single wrapper call with
+	// all of its Data Anchors. Used as the ablation that isolates horizontal data-plane scaling
+	// from intra-ISU parallelism. Also recorded for Centralized rows, where it does not apply.
+	NoSubBatch = 0
 
 	// HistorySamples defines the number of historical time-series observations injected
 	// per sensor into both the Centralized KG and the Federated TSDB ISUs.
@@ -34,6 +41,26 @@ const (
 
 	// SimulatedDelay defines the inter-run pause between consecutive query evaluations.
 	SimulatedDelay = 150 * time.Millisecond
+
+	// IdleCPUThresholdCores defines the per-pod CPU usage (cores) below which a storage pod
+	// (Dgraph Alpha or a TimescaleDB ISU) is considered idle, i.e. free of background
+	// compactions, rollups, or DropAll cleanup left by the previous scenario's data load.
+	IdleCPUThresholdCores = 0.10
+
+	// IdleConsecutiveChecks defines how many consecutive idle readings are required.
+	IdleConsecutiveChecks = 3
+
+	// IdlePollInterval defines the pause between idle readings. Readings use irate() over a
+	// 1-minute window (last two cAdvisor samples, ~10-15 s apart), so three consecutive idle
+	// readings cover at least one full cAdvisor update interval.
+	IdlePollInterval = 5 * time.Second
+
+	// IdleMaxFailedChecks defines how many consecutive failed Prometheus readings are tolerated
+	// before the idle wait gives up and the scenario proceeds with a warning.
+	IdleMaxFailedChecks = 6
+
+	// IdleMaxWait bounds the idle wait; on timeout the scenario proceeds with a warning.
+	IdleMaxWait = 5 * time.Minute
 )
 
 // Global shared infrastructure state across the benchmark lifecycle.
@@ -47,34 +74,12 @@ var (
 // SEMANTIC PLANE ENTITY MODEL (Topological White Nodes & Articulated Black Nodes)
 // ======================================================================================
 
-// Observation represents a timestamped telemetry state node stored directly within
-// the Centralized Knowledge Graph baseline.
-type Observation struct {
-	Uid       string    `json:"uid,omitempty"`
-	DType     []string  `json:"dgraph.type,omitempty"`
-	Timestamp time.Time `json:"timestamp,omitempty"`
-	Value     float64   `json:"value,omitempty"`
-}
-
-// Thing represents a canonical ontological entity in the Knowledge Graph
-// (e.g., WindFarm, Zone, Turbine, Component, or Sensor).
-// Purely topological entities (white nodes: WindFarm, Zone, Turbine, Component)
-// maintain hierarchical `hasChild` relationships without external Data Anchors.
-// IoT-linked entities (articulated black nodes: Sensor) encapsulate a Data Anchor
-// composed of `(IsuID, ExternalID)` pointing to the Federated Data Plane.
-type Thing struct {
-	Uid            string        `json:"uid,omitempty"`
-	DType          []string      `json:"dgraph.type,omitempty"`
-	Name           string        `json:"name,omitempty"`
-	AssetCategory  string        `json:"asset_category,omitempty"` // "WindFarm", "Zone", "Turbine", "Component", "Sensor"
-	SubType        string        `json:"sub_type,omitempty"`       // e.g., "Gearbox", "Generator", "Temperature", "Vibration"
-	MaxThreshold   float64       `json:"max_threshold,omitempty"`
-	IsuID          int           `json:"isu_id,omitempty"`         // Data Anchor: Target ISU index
-	ExternalID     int           `json:"external_id,omitempty"`    // Data Anchor: Local TSDB sensor identifier
-	Value          float64       `json:"value,omitempty"`          // Dynamic telemetry state
-	HasObservation []Observation `json:"hasObservation,omitempty"` // Historical observations in Centralized KG mode
-	HasChild       []Thing       `json:"hasChild,omitempty"`       // Topological hierarchical relationships
-}
+// Observation and Thing are the shared Wind Farm Digital Twin entities (see package twin),
+// so the Centralized baseline uses the exact same KG model as the ingestion benchmark.
+type (
+	Observation = twin.Observation
+	Thing       = twin.Thing
+)
 
 // ======================================================================================
 // DATA PLANE & GROUND-TRUTH VERIFICATION MODELS
@@ -111,6 +116,7 @@ type QueryMetrics struct {
 	PartitionMode  string  // "Uniform", "ModerateSkew", "HotspotSkew"
 	QueryType      string  // "Q1_Selective", "Q2_Filtering", "Q3_Inference"
 	Concurrency    int     // Number of concurrent query streams (C)
+	SubBatch       int     // Intra-ISU sub-batch size (ISUSubBatch) or NoSubBatch (0)
 	RunID          int     // Iteration index (1..RunsPerTest)
 	TotalLatency   float64 // End-to-end execution latency (ms): Stage 1 + Stage 2 + Stage 3 + Stage 4
 	Stage1AnchorMs float64 // Stage 1: Topological Traversal & Data Anchor Resolution in KG (ms)
@@ -120,4 +126,3 @@ type QueryMetrics struct {
 	SuccessRate    float64 // End-to-end Data Integrity percentage (0.0 - 100.0%)
 	MemAllocMB     float64 // Heap memory allocated per query execution (MB)
 }
-
