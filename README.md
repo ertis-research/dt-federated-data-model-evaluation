@@ -156,7 +156,7 @@ To guarantee a fair, symmetric comparison:
 - Every sensor in both architectures is pre-populated with **`HistorySamples = 100` historical observations** (stored as linked `hasObservation` nodes plus the materialized `last_value` in Dgraph for `Centralized` — the same model used during ingestion — and as hypertable rows in TimescaleDB for `Federated`).
 - Both architectures resolve the same **Last Known Value (LKV)** of every target sensor: `Centralized` reads the materialized `last_value` predicate during the traversal, and `Federated` runs a top-1 index probe per sensor (`unnest(ids) CROSS JOIN LATERAL (... ORDER BY time DESC LIMIT 1)`) on the `(sensor_id, time DESC)` index of each ISU. In both cases the cost per sensor is independent of the history length.
 - After each scenario's data load, the benchmark waits until every storage pod (Dgraph Alpha and all ISUs) stays below `IdleCPUThresholdCores = 0.10` cores for three consecutive Prometheus readings taken every 5 s (`irate` over a 1-minute window, i.e. the latest cAdvisor interval; 5-minute timeout). This keeps background work (Badger compactions and rollups, the cleanup of the previous scenario's `DropAll`, autovacuum) out of the measured runs.
-- Plots report the **median** and **P95** of the 30 runs per configuration. The distributions are skewed, and with 30 samples a P99 is essentially the maximum.
+- Plots and tables report the **mean** and **P95** of the 30 runs per configuration. The mean is paired with P95 because the distributions are skewed, and with 30 samples a P99 is essentially the maximum.
 - Every federated execution is decomposed into four explicitly measured stages:
   1. **`Stage1_Anchor_ms` (Anchor Resolution):** Traversing the topological hierarchy (`Thing` nodes via `hasChild` edges) in Dgraph and extracting the `(isu_id, external_id)` Data Anchors of the target articulated leaf nodes.
   2. **`Stage2_ISU_IO_ms` (Parallel ISU State Retrieval):** Concurrent LKV queries dispatched to the target TimescaleDB ISUs (by default each ISU's anchors are split into parallel sub-batches of `ISUSubBatch = 250` IDs; the `Sub_Batch` CSV column records the setting, with `0` meaning one call per ISU), returning dynamic telemetry wrapped in canonical **JSON Semantic Wrappers**.
@@ -284,3 +284,21 @@ python src/query_exp2_complexity.py --dir 2026-10-19_16-30-00
 python src/query_exp3_skew.py --dir ../evaluation/query/output/2026-10-19_16-30-00
 python src/query.py --dir 2026-10-19_16-30-00
 ```
+
+#### Paper Results
+The figures and tables in the paper were generated from the following executions, included in the repository:
+
+| Evaluation | Execution folder |
+|---|---|
+| Ingestion | `evaluation/ingestion/output/2026-10-28_16-29-15/` |
+| Query | `evaluation/query/output/2026-10-27_12-04-42/` |
+
+Since the scripts select the latest execution by default, pass these folders explicitly to reproduce the paper:
+
+```bash
+cd plots
+python src/ingestion.py 2026-10-28_16-29-15
+python src/query.py 2026-10-27_12-04-42
+```
+
+The remaining executions are independent repetitions of the same benchmark.

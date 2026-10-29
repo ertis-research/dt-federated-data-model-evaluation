@@ -1,0 +1,15 @@
+% Requires \usepackage{booktabs} and \usepackage{makecell}
+\begin{table}[t]
+\centering
+\caption{Mean state retrieval time (ms) under partition skew at 5{,}000 devices and 8 ISUs ($Q_3$, $C=1$), when the requests to each ISU are split and when a single request is sent per ISU.}
+\label{tab:query-exp3}
+\begin{tabular}{lrr}
+\toprule
+Partitioning & \makecell{Split\\requests} & \makecell{One request\\per ISU} \\
+\midrule
+Uniform & 12.1 & 18.8 \\
+Moderate (50\% on ISU 0) & 13.5 & 37.5 \\
+Hotspot (80\% on ISU 0) & 14.0 & 48.6 \\
+\bottomrule
+\end{tabular}
+\end{table}

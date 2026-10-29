@@ -362,11 +362,21 @@ func executeTestRun(sc Scenario, arch ArchConfig, runID int, isWarmup bool) Resu
 		}
 
 		podRegex := buildPodRegex(arch)
-		cpuQuery := fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{namespace="%s", pod=~"%s", container!="POD", container!=""}[%dms]))`, myNamespace, podRegex, windowMs)
+		// CPU is the difference of the cumulative counter between the start and the end of the run,
+		// divided by the elapsed time. Unlike rate(), an instant query only needs one sample per
+		// container before each instant, so short windows never return empty or partial sums.
+		cpuQuery := fmt.Sprintf(`sum(container_cpu_usage_seconds_total{namespace="%s", pod=~"%s", container!="POD", container!=""})`, myNamespace, podRegex)
 		ramQuery := fmt.Sprintf(`sum(max_over_time(container_memory_working_set_bytes{namespace="%s", pod=~"%s", container!="POD", container!=""}[%dms])) / 1024 / 1024`, myNamespace, podRegex, windowMs)
 
+		var cpuStart, cpuEnd float64
 		var errCPU, errRAM error
-		cpuAvg, errCPU = queryPrometheus(promURL, cpuQuery, workEnd)
+		cpuStart, errCPU = queryPrometheus(promURL, cpuQuery, startTime)
+		if errCPU == nil {
+			cpuEnd, errCPU = queryPrometheus(promURL, cpuQuery, workEnd)
+		}
+		if errCPU == nil {
+			cpuAvg = (cpuEnd - cpuStart) / workEnd.Sub(startTime).Seconds()
+		}
 		if errCPU != nil {
 			fmt.Printf("   [!] Error Prometheus CPU: %v\n", errCPU)
 		}

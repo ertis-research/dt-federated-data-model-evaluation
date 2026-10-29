@@ -1,0 +1,19 @@
+% Requires \usepackage{booktabs}
+\begin{table}[t]
+\centering
+\caption{Ingestion under stress (5{,}000 devices at 1\,Hz, 5{,}000 msg/s offered). Mean over 5 runs. Resources are the container limits of the storage pods on the write path; undelivered messages are those not persisted at the drain cutoff, as a share of the offered messages.}
+\label{tab:ingestion-stress}
+\begin{tabular}{lrrrrrr}
+\toprule
+Architecture & vCPU / RAM & Throughput (msg/s) & Undelivered & Mean (ms) & P95 (ms) & P99 (ms) \\
+\midrule
+Centralized 1-to-1 & 4 / 16 GiB & 1{,}328 (26.6\%) & 54\% & 25{,}188 & 37{,}285 & 38{,}177 \\
+Centralized Batched & 4 / 16 GiB & 4{,}946 (98.9\%) & 0 & 145 & 260 & 324 \\
+\midrule
+Federated 1 ISU & 2 / 4 GiB & 3{,}740 (74.8\%) & 0 & 5{,}336 & 16{,}489 & 23{,}166 \\
+Federated 2 ISUs & 4 / 8 GiB & 4{,}921 (98.4\%) & 0 & 81 & 300 & 949 \\
+Federated 4 ISUs & 8 / 16 GiB & 4{,}987 (99.7\%) & 0 & 47 & 91 & 520 \\
+Federated 8 ISUs & 16 / 32 GiB & 4{,}997 (99.9\%) & 0 & 36 & 78 & 178 \\
+\bottomrule
+\end{tabular}
+\end{table}

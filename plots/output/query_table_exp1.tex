@@ -1,0 +1,18 @@
+% Requires \usepackage{booktabs} and \usepackage{makecell}
+\begin{table}[t]
+\centering
+\caption{End-to-end query latency of \texttt{Q3\_Inference} ($C=1$), mean (P95) in ms over 30 runs. Federated configurations use intra-ISU sub-batching.}
+\label{tab:query-exp1}
+\begin{tabular}{rrrrrr}
+\toprule
+Devices & Centralized & Fed. 1 ISU & Fed. 2 ISUs & Fed. 4 ISUs & Fed. 8 ISUs \\
+\midrule
+500 & 38 (40) & 47 (52) & 47 (51) & 45 (49) & 44 (47) \\
+1,000 & 59 (74) & 67 (72) & 68 (71) & 68 (75) & 65 (68) \\
+2,000 & 129 (159) & 104 (128) & 106 (112) & 105 (112) & 107 (134) \\
+3,000 & 157 (230) & 152 (186) & 152 (192) & 151 (176) & 152 (172) \\
+4,000 & 238 (337) & 240 (265) & 240 (334) & 243 (311) & 248 (258) \\
+5,000 & 334 (459) & 258 (353) & 255 (318) & 270 (363) & 264 (341) \\
+\bottomrule
+\end{tabular}
+\end{table}

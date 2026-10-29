@@ -9,6 +9,7 @@ Generates (all in linear scale):
   - output/ingestion_cpu.pdf              (Total DB CPU Usage)
   - output/ingestion_ram.pdf              (Total DB Memory Usage)
   - output/ingestion_resources.pdf        (Combined CPU & RAM Usage in a 2-panel figure)
+  - output/ingestion_tables.tex           (LaTeX table of the stress step)
 
 Usage:
   python ingestion.py                           # Uses latest execution in evaluation/ingestion/output/
@@ -22,6 +23,8 @@ from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+
+from arch_style import ARCH_COLORS, ARCH_LABELS
 
 CSV_FILENAME = "ingestion_evaluation_results.csv"
 
@@ -57,6 +60,80 @@ def resolve_csv_path(target_dir: str | None, csv_filename: str = CSV_FILENAME) -
     )
 
 
+# evaluation/ingestion TestDurationSec: publishing window of each measured run (seconds)
+TEST_DURATION_SEC = 30
+
+# Container limits of the storage pods on the write path (kubernetes/): Dgraph Alpha 4 vCPU / 16 GiB,
+# each TimescaleDB ISU 2 vCPU / 4 GiB
+CENTRALIZED_VCPU, CENTRALIZED_RAM_GIB = 4, 16
+ISU_VCPU, ISU_RAM_GIB = 2, 4
+
+TABLE_ARCH_LABELS = [
+    ("Centralized_1to1", "Centralized 1-to-1"),
+    ("Centralized_Batched", "Centralized Batched"),
+    ("Federated_1ISU", "Federated 1 ISU"),
+    ("Federated_2ISU", "Federated 2 ISUs"),
+    ("Federated_4ISU", "Federated 4 ISUs"),
+    ("Federated_8ISU", "Federated 8 ISUs"),
+]
+
+
+def write_stress_table(df: pd.DataFrame, output_dir: str) -> None:
+    """Write output/ingestion_tables.tex with the stress step (highest Step_ID): resources, sustained
+    throughput, undelivered messages and latency, averaged over the measured runs."""
+    step = df["Step_ID"].max()
+    stress = df[df["Step_ID"] == step]
+    sensors, freq = int(stress["Num_Sensors"].iloc[0]), float(stress["Freq_Hz"].iloc[0])
+    offered_rate = sensors * freq
+    offered_msgs = offered_rate * TEST_DURATION_SEC
+    stats = stress.groupby("Architecture").agg(
+        Num_ISUs=("Num_ISUs", "first"),
+        Throughput=("Throughput_msg_sec", "mean"),
+        Undelivered=("Undelivered_Msgs", "mean"),
+        Mean=("Avg_Latency_ms", "mean"),
+        P95=("P95_Latency_ms", "mean"),
+        P99=("P99_Latency_ms", "mean"),
+    )
+
+    def num(v: float) -> str:
+        return f"{v:,.0f}".replace(",", "{,}")
+
+    lines = [
+        "% Requires \\usepackage{booktabs}",
+        "\\begin{table}[t]",
+        "\\centering",
+        f"\\caption{{Ingestion under stress ({num(sensors)} devices at {freq:g}\\,Hz, {num(offered_rate)} msg/s offered). "
+        f"Mean over {stress['Run_ID'].nunique()} runs. Resources are the container limits of the storage pods on the write path; "
+        "undelivered messages are those not persisted at the drain cutoff, as a share of the offered messages.}",
+        "\\label{tab:ingestion-stress}",
+        "\\begin{tabular}{lrrrrrr}",
+        "\\toprule",
+        "Architecture & vCPU / RAM & Throughput (msg/s) & Undelivered & Mean (ms) & P95 (ms) & P99 (ms) \\\\",
+        "\\midrule",
+    ]
+    for arch_key, arch_label in TABLE_ARCH_LABELS:
+        if arch_key not in stats.index:
+            continue
+        r = stats.loc[arch_key]
+        n_isus = int(r["Num_ISUs"])
+        if arch_key == "Federated_1ISU":
+            lines.append("\\midrule")
+        vcpu, ram = (n_isus * ISU_VCPU, n_isus * ISU_RAM_GIB) if n_isus > 0 else (CENTRALIZED_VCPU, CENTRALIZED_RAM_GIB)
+        share = r["Throughput"] / offered_rate * 100.0
+        undelivered = r["Undelivered"] / offered_msgs * 100.0
+        undelivered_cell = "0" if r["Undelivered"] == 0 else f"{undelivered:.0f}\\%"
+        lines.append(
+            f"{arch_label} & {vcpu} / {ram} GiB & {num(r['Throughput'])} ({share:.1f}\\%) & {undelivered_cell} & "
+            f"{num(r['Mean'])} & {num(r['P95'])} & {num(r['P99'])} \\\\"
+        )
+    lines += ["\\bottomrule", "\\end{tabular}", "\\end{table}"]
+
+    out_path = os.path.join(output_dir, "ingestion_tables.tex")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"[Ingestion Evaluation] LaTeX table saved in '{out_path}'.")
+
+
 def generate_ingestion_plots(target_dir: str | None = None, output_dir: str = "output") -> None:
     """Load ingestion evaluation CSV data and render performance & resource figures."""
     csv_path = resolve_csv_path(target_dir, CSV_FILENAME)
@@ -88,6 +165,8 @@ def generate_ingestion_plots(target_dir: str | None = None, output_dir: str = "o
             df[col] = df[col].mask(df[col] <= 0)
 
     if has_multi_isu:
+        write_stress_table(df, output_dir)
+
         df_stats = (
             df.groupby(["Step_ID", "Scenario_Label", "Architecture", "Num_ISUs"], as_index=False)
             .agg(
@@ -100,7 +179,7 @@ def generate_ingestion_plots(target_dir: str | None = None, output_dir: str = "o
                 PacketLoss_Mean=("Undelivered_Msgs", "mean"),
                 Throughput_Mean=("Throughput_msg_sec", "mean"),
                 Throughput_Std=("Throughput_msg_sec", "std"),
-                CPU_Mean=("DB_CPU_Avg_Cores", "median"),  # robust to partial Prometheus windows
+                CPU_Mean=("DB_CPU_Avg_Cores", "mean"),
                 CPU_Std=("DB_CPU_Avg_Cores", "std"),
                 RAM_Mean=("DB_RAM_Max_MB", "mean"),
                 RAM_Std=("DB_RAM_Max_MB", "std"),
@@ -108,12 +187,12 @@ def generate_ingestion_plots(target_dir: str | None = None, output_dir: str = "o
         ).sort_values("Step_ID")
 
         arch_order = [
-            ("Centralized_1to1", "Centralized (1-to-1)", "o", "--"),
-            ("Centralized_Batched", "Centralized (Batched)", "^", "-."),
-            ("Federated_1ISU", "Federated (1 ISU)", "s", "-"),
-            ("Federated_2ISU", "Federated (2 ISUs)", "D", "-"),
-            ("Federated_4ISU", "Federated (4 ISUs)", "v", "-"),
-            ("Federated_8ISU", "Federated (8 ISUs)", "P", "-"),
+            ("Centralized_1to1", ARCH_LABELS["Centralized_1to1"], "o", "--"),
+            ("Centralized_Batched", ARCH_LABELS["Centralized_Batched"], "^", "-."),
+            ("Federated_1ISU", ARCH_LABELS["Federated_1ISU"], "s", "-"),
+            ("Federated_2ISU", ARCH_LABELS["Federated_2ISU"], "D", "-"),
+            ("Federated_4ISU", ARCH_LABELS["Federated_4ISU"], "v", "-"),
+            ("Federated_8ISU", ARCH_LABELS["Federated_8ISU"], "P", "-"),
         ]
 
         scenarios = df_stats[["Step_ID", "Scenario_Label"]].drop_duplicates().sort_values("Step_ID")
@@ -131,6 +210,7 @@ def generate_ingestion_plots(target_dir: str | None = None, output_dir: str = "o
                     sub[metric_col],
                     marker=marker,
                     linestyle=ls,
+                    color=ARCH_COLORS[arch_key],
                     label=arch_label,
                     linewidth=1.5,
                     markersize=5,
@@ -163,6 +243,7 @@ def generate_ingestion_plots(target_dir: str | None = None, output_dir: str = "o
                     np.minimum(y_vals, y_cap * 1.03),
                     marker=marker,
                     linestyle=ls,
+                    color=ARCH_COLORS[arch_key],
                     linewidth=1.5,
                     markersize=5,
                     label=arch_label,
@@ -185,9 +266,8 @@ def generate_ingestion_plots(target_dir: str | None = None, output_dir: str = "o
             # Annotate off-scale saturation points cleanly near the top border
             off_scale_points.sort(key=lambda item: item[1], reverse=True)
             for rank, (x_idx, val, arch_label, color) in enumerate(off_scale_points):
-                short_name = arch_label.replace("Centralized ", "Cent. ").replace("Federated ", "Fed. ")
                 val_sec = val / 1000.0
-                text_label = f"{short_name}: {val_sec:.1f}s" if val >= 1000 else f"{short_name}: {val:.0f}ms"
+                text_label = f"{arch_label}: {val_sec:.1f}s" if val >= 1000 else f"{arch_label}: {val:.0f}ms"
                 y_pos = y_cap * (0.91 - rank * 0.11)
                 ax.annotate(
                     text_label,
@@ -205,16 +285,16 @@ def generate_ingestion_plots(target_dir: str | None = None, output_dir: str = "o
 
             return handles, legend_labels
 
-        # 1a. Standalone Mean Ingestion Latency (Linear scale, 0-88 ms operational window)
+        # 1a. Standalone Mean Ingestion Latency (Linear scale, 0-160 ms operational window)
         fig, ax = plt.subplots(figsize=(4.8, 3.4))
-        plot_linear_latency(ax, "Latency_Mean", "Mean Ingestion Latency (ms)", y_cap=88.0, show_legend=True)
+        plot_linear_latency(ax, "Latency_Mean", "Mean Ingestion Latency (ms)", y_cap=160.0, show_legend=True)
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "ingestion_latency_mean.pdf"), bbox_inches="tight")
         plt.close(fig)
 
-        # 1b. Standalone P99 Tail Latency (Linear scale, 0-860 ms operational window)
+        # 1b. Standalone P99 Tail Latency (Linear scale, 0-1050 ms operational window)
         fig, ax = plt.subplots(figsize=(4.8, 3.4))
-        plot_linear_latency(ax, "P99_Mean", "P99 Tail Latency (ms)", y_cap=860.0, show_legend=True)
+        plot_linear_latency(ax, "P99_Mean", "P99 Tail Latency (ms)", y_cap=1050.0, show_legend=True)
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "ingestion_latency_p99.pdf"), bbox_inches="tight")
         plt.close(fig)
@@ -222,10 +302,10 @@ def generate_ingestion_plots(target_dir: str | None = None, output_dir: str = "o
         # 1c. Combined 2-Panel Linear Latency Figure: (a) Mean Latency & (b) P99 Tail Latency
         fig, (ax_mean, ax_p99) = plt.subplots(1, 2, figsize=(8.6, 3.4))
         handles, legend_labels = plot_linear_latency(
-            ax_mean, "Latency_Mean", "Mean Ingestion Latency (ms)", y_cap=88.0, show_legend=False, title="(a) Mean Ingestion Latency"
+            ax_mean, "Latency_Mean", "Mean Ingestion Latency (ms)", y_cap=160.0, show_legend=False, title="(a) Mean Ingestion Latency"
         )
         plot_linear_latency(
-            ax_p99, "P99_Mean", "P99 Tail Latency (ms)", y_cap=860.0, show_legend=False, title="(b) P99 Tail Latency"
+            ax_p99, "P99_Mean", "P99 Tail Latency (ms)", y_cap=1050.0, show_legend=False, title="(b) P99 Tail Latency"
         )
         fig.legend(
             handles,
@@ -264,6 +344,7 @@ def generate_ingestion_plots(target_dir: str | None = None, output_dir: str = "o
                 sub["CPU_Mean"],
                 marker=marker,
                 linestyle=ls,
+                color=ARCH_COLORS[arch_key],
                 label=arch_label,
                 linewidth=1.5,
                 markersize=5,
@@ -273,6 +354,7 @@ def generate_ingestion_plots(target_dir: str | None = None, output_dir: str = "o
                 sub["RAM_Mean"],
                 marker=marker,
                 linestyle=ls,
+                color=ARCH_COLORS[arch_key],
                 label=arch_label,
                 linewidth=1.5,
                 markersize=5,

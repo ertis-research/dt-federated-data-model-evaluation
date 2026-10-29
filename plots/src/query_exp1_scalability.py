@@ -2,9 +2,9 @@
 Plot generator for Sub-Experiment 1: Horizontal Scalability across N ISUs (1, 2, 4, 8).
 
 Generates:
-  - output/query_exp1_total_latency.pdf          (Median lines, Median-to-P95 bands)
-  - output/query_exp1_orchestration_overhead.pdf (4-Stage Median Latency Breakdown at 5000 devices, full system)
-  - output/query_exp1_subbatch_ablation.pdf      (Stage 2 median vs ISUs, with/without sub-batching)
+  - output/query_exp1_total_latency.pdf          (Mean lines, Mean-to-P95 bands)
+  - output/query_exp1_orchestration_overhead.pdf (4-Stage Mean Latency Breakdown at 5000 devices, full system)
+  - output/query_exp1_subbatch_ablation.pdf      (Stage 2 mean vs ISUs, with/without sub-batching)
 
 Usage:
   python query_exp1_scalability.py                           # Uses latest execution in evaluation/query/output/
@@ -20,6 +20,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
+
+from arch_style import ARCH_COLORS, ARCH_LABELS
 
 CSV_FILENAME = "exp1_scalability.csv"
 
@@ -56,15 +58,6 @@ def resolve_csv_path(target_dir: str | None, csv_filename: str) -> Path:
 
 
 SUB_BATCH_DEFAULT = 250  # evaluation/query ISUSubBatch (full-system orchestrator configuration)
-
-# Fixed colors per architecture, shared by all query figures
-ARCH_COLORS = {
-    "Centralized": "#1f77b4",
-    "Federated_1ISU": "#ff7f0e",
-    "Federated_2ISU": "#2ca02c",
-    "Federated_4ISU": "#d62728",
-    "Federated_8ISU": "#9467bd",
-}
 
 
 def add_sub_batch_column(df: pd.DataFrame) -> pd.DataFrame:
@@ -109,27 +102,27 @@ def generate_exp1_plots(target_dir: str | None = None, output_dir: str = "output
     stats_all = (
         exp1.groupby(["Num_Sensors", "Architecture", "Num_ISUs", "Sub_Batch"], as_index=False)
         .agg(
-            Total_Median=("Total_Latency_ms", "median"),
+            Total_Mean=("Total_Latency_ms", "mean"),
             Total_P95=("Total_Latency_ms", p95),
             Total_P99=("Total_Latency_ms", p99),
-            S1_Median=("Stage1_Anchor_ms", "median"),
-            S2_Median=("Stage2_ISU_IO_ms", "median"),
-            S3_Median=("Stage3_Hydration_ms", "median"),
-            S4_Median=("Stage4_QueryExec_ms", "median"),
+            S1_Mean=("Stage1_Anchor_ms", "mean"),
+            S2_Mean=("Stage2_ISU_IO_ms", "mean"),
+            S3_Mean=("Stage3_Hydration_ms", "mean"),
+            S4_Mean=("Stage4_QueryExec_ms", "mean"),
         )
     )
     # Full system: Centralized baseline + Federated with intra-ISU sub-batching
     stats1 = stats_all[(stats_all["Num_ISUs"] == 0) | (stats_all["Sub_Batch"] > 0)]
 
     arch_list = [
-        ("Centralized", "Centralized", "o"),
-        ("Federated_1ISU", "Fed. (1 ISU)", "s"),
-        ("Federated_2ISU", "Fed. (2 ISUs)", "D"),
-        ("Federated_4ISU", "Fed. (4 ISUs)", "^"),
-        ("Federated_8ISU", "Fed. (8 ISUs)", "P"),
+        ("Centralized", ARCH_LABELS["Centralized"], "o"),
+        ("Federated_1ISU", ARCH_LABELS["Federated_1ISU"], "s"),
+        ("Federated_2ISU", ARCH_LABELS["Federated_2ISU"], "D"),
+        ("Federated_4ISU", ARCH_LABELS["Federated_4ISU"], "^"),
+        ("Federated_8ISU", ARCH_LABELS["Federated_8ISU"], "P"),
     ]
 
-    # Figure 1A: End-to-End Total Query Latency of the full system (median lines).
+    # Figure 1A: End-to-End Total Query Latency of the full system (mean lines).
     # The P95 is drawn as a shaded band only for Centralized and Fed. (8 ISUs): the federated
     # configurations overlap (ISU count barely affects latency), so five dashed P95 lines are unreadable.
     fig, ax = plt.subplots(figsize=(4.6, 4.0))
@@ -140,7 +133,7 @@ def generate_exp1_plots(target_dir: str | None = None, output_dir: str = "output
         highlight = key in ("Centralized", "Federated_8ISU")
         ax.plot(
             sub["Num_Sensors"],
-            sub["Total_Median"],
+            sub["Total_Mean"],
             marker=marker,
             linestyle="-",
             linewidth=1.6 if highlight else 1.0,
@@ -150,10 +143,10 @@ def generate_exp1_plots(target_dir: str | None = None, output_dir: str = "output
             label=label,
         )
         if highlight:
-            ax.fill_between(sub["Num_Sensors"], sub["Total_Median"], sub["Total_P95"],
+            ax.fill_between(sub["Num_Sensors"], sub["Total_Mean"], sub["Total_P95"],
                             color=ARCH_COLORS[key], alpha=0.15, linewidth=0)
 
-    band_handle = Patch(facecolor="grey", alpha=0.3, label="Median to P95")
+    band_handle = Patch(facecolor="grey", alpha=0.3, label="Mean to P95")
     handles, _ = ax.get_legend_handles_labels()
     ax.locator_params(axis="y", nbins=10)
     ax.set_xlabel("Number of Devices")
@@ -172,17 +165,17 @@ def generate_exp1_plots(target_dir: str | None = None, output_dir: str = "output
     fig.savefig(os.path.join(output_dir, "query_exp1_total_latency.pdf"), bbox_inches="tight")
     plt.close(fig)
 
-    # Figure 1B: Stacked 4-Stage median breakdown of the full system at 5000 devices
+    # Figure 1B: Stacked 4-Stage mean breakdown of the full system at 5000 devices
     # (Centralized as reference; Federated with sub-batching). The sub-batching ablation is
     # compared on Stage 2 only (Figure 1C), because its variants are measured sequentially.
     sub5000 = stats1[stats1["Num_Sensors"] == 5000].sort_values("Num_ISUs")
     if not sub5000.empty:
         fig, ax = plt.subplots(figsize=(4.6, 3.4))
         x_pos = np.arange(len(sub5000))
-        bar_labels = ["Cen." if n == 0 else f"{n} ISU" + ("s" if n > 1 else "") for n in sub5000["Num_ISUs"]]
-        stage_cols = ["S1_Median", "S2_Median", "S3_Median", "S4_Median"]
-        stage_labels = ["Stage 1: Anchor Resolution", "Stage 2: Parallel ISU I/O",
-                        "Stage 3: Semantic Hydration", "Stage 4: Query/Inference Exec"]
+        bar_labels = ["Cent." if n == 0 else f"{n} ISU" + ("s" if n > 1 else "") for n in sub5000["Num_ISUs"]]
+        stage_cols = ["S1_Mean", "S2_Mean", "S3_Mean", "S4_Mean"]
+        stage_labels = ["Data Anchor resolution", "State retrieval",
+                        "Semantic hydration", "Query execution"]
         hatches = ["", "//", "..", "xx"]
         bottom = np.zeros(len(sub5000))
         for col, label, hatch in zip(stage_cols, stage_labels, hatches):
@@ -193,13 +186,13 @@ def generate_exp1_plots(target_dir: str | None = None, output_dir: str = "output
         ax.set_xticks(x_pos)
         ax.set_xticklabels(bar_labels)
         ax.set_xlabel("Architecture (5000 Devices)")
-        ax.set_ylabel("Median Latency Breakdown (ms)")
-        ax.legend(fontsize=7, edgecolor="black")
+        ax.set_ylabel("Mean Latency Breakdown (ms)")
+        ax.legend(fontsize=7, edgecolor="black", ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0))
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, "query_exp1_orchestration_overhead.pdf"), bbox_inches="tight")
         plt.close(fig)
 
-    # Figure 1C: Sub-batching ablation, Stage 2 (ISU I/O) median vs number of ISUs per sensor count
+    # Figure 1C: Sub-batching ablation, Stage 2 (ISU I/O) mean vs number of ISUs per sensor count
     fed_all = stats_all[stats_all["Num_ISUs"] > 0]
     if {SUB_BATCH_DEFAULT, 0} <= set(fed_all["Sub_Batch"]):
         fig, ax = plt.subplots(figsize=(4.6, 3.4))
@@ -210,13 +203,13 @@ def generate_exp1_plots(target_dir: str | None = None, output_dir: str = "output
                 sub = fed_all[(fed_all["Num_Sensors"] == count) & (fed_all["Sub_Batch"] == variant)].sort_values("Num_ISUs")
                 if sub.empty:
                     continue
-                ax.plot(sub["Num_ISUs"], sub["S2_Median"], marker="o", markersize=4, linestyle=ls,
+                ax.plot(sub["Num_ISUs"], sub["S2_Mean"], marker="o", markersize=4, linestyle=ls,
                         color=colors[c_idx % len(colors)], label=f"{count} devices" if variant > 0 else None)
         ax.set_xscale("log", base=2)
         ax.set_xticks([1, 2, 4, 8])
         ax.set_xticklabels(["1", "2", "4", "8"])
         ax.set_xlabel("Number of ISUs")
-        ax.set_ylabel("Median Stage 2 ISU I/O (ms)")
+        ax.set_ylabel("Mean State Retrieval (ms)")
         style_handles = [
             Line2D([0], [0], color="black", lw=1.5, ls="-", label=f"Sub-batch {SUB_BATCH_DEFAULT}"),
             Line2D([0], [0], color="black", lw=1.5, ls="--", label="One call per ISU"),

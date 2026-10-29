@@ -1,0 +1,26 @@
+% Requires \usepackage{booktabs} and \usepackage{makecell}
+\begin{table}[t]
+\centering
+\caption{End-to-end query latency at 5{,}000 devices, mean (P95) in ms over 30 bursts of $C$ simultaneous queries. $\Delta$ is the change of the Federated (8 ISUs) mean relative to Centralized.}
+\label{tab:query-exp2}
+\begin{tabular}{llrrr}
+\toprule
+Query & $C$ & Centralized & Federated & $\Delta$ \\
+\midrule
+Q1 & 1 & 54 (58) & 61 (63) & +13\% \\
+Q1 & 5 & 254 (331) & 175 (249) & -31\% \\
+Q1 & 10 & 557 (667) & 402 (481) & -28\% \\
+Q1 & 20 & 1198 (1375) & 824 (952) & -31\% \\
+\midrule
+Q2 & 1 & 60 (69) & 67 (77) & +13\% \\
+Q2 & 5 & 356 (446) & 256 (330) & -28\% \\
+Q2 & 10 & 739 (888) & 505 (585) & -32\% \\
+Q2 & 20 & 1540 (1765) & 1072 (1227) & -30\% \\
+\midrule
+Q3 & 1 & 331 (394) & 271 (338) & -18\% \\
+Q3 & 5 & 1349 (1674) & 958 (1226) & -29\% \\
+Q3 & 10 & 2935 (3457) & 1861 (2359) & -37\% \\
+Q3 & 20 & 6575 (7182) & 4742 (5000) & -28\% \\
+\bottomrule
+\end{tabular}
+\end{table}
